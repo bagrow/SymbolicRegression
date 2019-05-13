@@ -1,7 +1,7 @@
-import functions.common_functions as cf
-from classes.tree import Tree
-from consts import *
-from protected_functions import *  # these are the protected functions
+from .common_functions import union, get_function
+from .tree import Tree
+from .consts import *
+from .protected_functions import *
 
 import scipy.optimize
 import numpy as np
@@ -67,7 +67,7 @@ class Individual(Tree):
         # use lists
         self.P = primitive_set
         self.T = terminal_set
-        self.C = cf.union(self.P, self.T)
+        self.C = union(self.P, self.T)
 
         self.max_depth = max_depth
         self.age = age
@@ -515,7 +515,7 @@ class Individual(Tree):
         if '#c' in self.T:
 
             are_consts = 'c[' in f_string
-            self.f = cf.get_function(f_string, const=are_consts)
+            self.f = get_function(f_string, const=are_consts)
 
             if are_consts:
 
@@ -552,7 +552,7 @@ class Individual(Tree):
 
         else:
 
-            self.f = cf.get_function(f_string)
+            self.f = get_function(f_string)
             print(f_string)
 
             error = lambda x, y, f=self.f: np.sqrt(np.mean(np.power(f(x) - y, 2)))

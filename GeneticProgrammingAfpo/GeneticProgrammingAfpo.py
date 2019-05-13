@@ -1,5 +1,5 @@
-from classes.GeneticProgramming import GeneticProgramming
-from classes.individual import Individual
+from .GeneticProgramming import GeneticProgramming
+from .individual import Individual
 
 import numpy as np
 

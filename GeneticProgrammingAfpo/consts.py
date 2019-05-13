@@ -1,5 +1,3 @@
-from protected_functions import *
-
 import numpy as np
 
 population_size = 100

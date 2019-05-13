@@ -1,5 +1,5 @@
-from classes.individual import Individual
-from consts import *
+from .individual import Individual
+from .consts import *
 
 import pandas as pd
 # import numpy as np
