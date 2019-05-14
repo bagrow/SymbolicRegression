@@ -101,6 +101,109 @@ class Tree:
             return str(subtree).replace('[', '(').replace(']', ')').replace(',', '').replace('\'', '')
 
 
+    def convert_lisp_to_standard(self, convertion_dict):
+        """General verions of this function where conversion is specified
+        by a dictionary."""
+
+        lisp = str(self.tree).replace(',', '').replace('\'', '')
+
+        stack = ['']
+        standard = ""
+
+        split_lisp = lisp.split()
+
+        # Check if single node function to avoid added a comma at the end of expr
+        if len(split_lisp) == 1:
+
+            # var = 'x' if self.num_vars == 1 else 'x[0]'
+            var = 'x[0]'
+
+            if lisp[1] == 'c' and lisp[2].isdigit():
+
+                # the 0*x avoids vectorization problems.
+                return 'c[' + lisp[2] + ']+0*' + var
+
+            elif lisp == 'x':
+
+                return lisp
+
+            elif lisp[1] == 'x' and lisp[2].isdigit() and len(lisp) == 4:
+
+                return 'x[' + lisp[2] + ']'
+
+            else:
+
+                return lisp + '+0*' + var
+
+        for word in split_lisp:
+
+            if word[0] == '[' and word[-1] == ']':
+
+                count = word.count(']')
+
+                if word[1] == 'c' and word[-count - 1].isdigit():
+
+                    standard += 'c[' + word[-count - 1] + ']'
+
+                elif word[1] == 'x' and word[-count - 1].isdigit() and len(word) == 3 + count:
+
+                    standard += 'x[' + word[-count - 1] + ']'
+
+                else:
+
+                    standard += word[1:-count]
+
+                count -= 1
+
+                for _ in range(count):
+                    stack.pop()
+
+                standard += ")" * count
+
+                if len(stack) > 1:
+                    standard += ','
+
+            elif word[0] == '[':
+
+                if word[1:] in convertion_dict and word[1:] in required_children_for_function:
+
+                    stack.append(convertion_dict[word[1:]])
+                    standard = standard + stack[-1] + '('
+
+                else:
+
+                    print('ERROR in convert_lisp_to_standard_for_function_creation: '
+                          'bad function ', stack[-1])
+                    exit()
+
+            elif word[-1] == ']':
+
+                count = word.count(']')
+
+                standard += word[:-count]
+
+                for _ in range(count):
+                    stack.pop()
+
+                standard += ')' * count
+
+                if len(stack) > 1:
+                    standard += ','
+
+            else:
+
+                standard = standard + word + ','
+
+        if 'x' not in standard:  # assumes only x is for the variable
+
+            # var = 'x' if self.num_vars == 1 else 'x[0]'
+            var = 'x[0]'
+
+            standard += '+0*' + var  # to avoid vectorization issue
+
+        return standard
+
+
     def convert_lisp_to_standard_no_numpy(self):
         """Convert the string to a typical layout for an equation.
         If a function that calls numpy is in the tree, numpy will be used.
