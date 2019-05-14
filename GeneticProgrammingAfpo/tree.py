@@ -883,7 +883,18 @@ class Tree:
             else:
                 fake_key = key
 
-            vis_tree.add_node(fake_key, label=node_dict[key],
+
+            try:
+                float(node_dict[key])
+
+            except ValueError:
+                label = node_dict[key]
+
+            else:
+                label = '%.2E' % node_dict[key]
+
+
+            vis_tree.add_node(fake_key, label=label,
                               fixedsize=False,
                               style='filled',
                               color=edgeColor,
