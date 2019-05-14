@@ -168,12 +168,12 @@ class Tree:
                 if word[1:] in convertion_dict and word[1:] in required_children_for_function:
 
                     stack.append(convertion_dict[word[1:]])
-                    standard = standard + stack[-1] + '('
+                    standard += stack[-1] + '('
 
                 else:
 
-                    print('ERROR in convert_lisp_to_standard_for_function_creation: '
-                          'bad function ', stack[-1])
+                    print('ERROR in convert_lisp_to_standard: '
+                          'bad function ', word[1:])
                     exit()
 
             elif word[-1] == ']':
