@@ -821,13 +821,17 @@ class Tree:
             return node_dict
 
 
-    def get_tree_size(self, subtree=None, tree_size=0):
+    def get_tree_size(self, subtree=None, tree_size=0, special_counts=None):
         """Count the number of nodes in the tree and return it."""
 
         if subtree is None:
             subtree = self.tree
 
-        tree_size += 1
+        if special_counts is None or subtree[0] not in special_counts:
+            tree_size += 1
+
+        else:
+            tree_size += special_counts[subtree[0]]
 
         if len(subtree) == 1:
             return tree_size
@@ -837,7 +841,9 @@ class Tree:
             for st in subtree:
 
                 if type(st) == list:
-                    tree_size = self.get_tree_size(subtree=st, tree_size=tree_size)
+                    tree_size = self.get_tree_size(subtree=st,
+                                                   tree_size=tree_size,
+                                                   special_counts=special_counts)
 
             return tree_size
 
