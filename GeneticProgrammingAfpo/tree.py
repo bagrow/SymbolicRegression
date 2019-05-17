@@ -680,35 +680,37 @@ class Tree:
             return self.select_subtree(subtree=subtree[index], child_index_list=child_index_list[1:])
 
 
-    def set_subtree(self, new_subtree, child_index_list, subtree=None):
-        """Find and set the node referenced by child_index_list equal to new_node.
+    def set_subtree(self, new_subtree, child_indices, subtree=None):
+        """Find and set the node referenced by child_index_list equal
+        to new_node.
 
-        Parameters:
-            new_subtree: The subtree that will be placed in
-            the desired location.
-
-            child_index_list: The location of the node that where
-            new_subtree should be placed. List is the indices of children.
-            For example, the index_list of the 0-th child of
-            node would be [0].  Root node is indicated by ['']
-
-            subtree: current subtree"""
+        Parameters
+            new_subtree : list (like self.tree)
+                The subtree that will be placed in the desired location.
+            child_indices : iterable (of ints)
+                The location of the node that where new_subtree should
+                be placed. Iterable is the indices of children.
+                For example, the index_list of the 0-th child of
+                node would be [0].  Root node is indicated by [] or ().
+            subtree : list (default=self.tree)
+                Current subtree the child_index_list is based on."""
 
         subtree = self.tree if subtree is None else subtree
 
-        if child_index_list == []:
+        if child_indices == [] or child_indices == ():
 
-            # [:] means the locations of stored values of subtree will be changed.
-            # Thus, self.tree will be affected by this assignment.
+            # [:] means the locations of stored values of subtree
+            # will be changed.
+            # Thus, self.tree will be effected by this assignment.
             subtree[:] = new_subtree
 
         else:
 
-            index = child_index_list[0] if type(subtree[0]) == list else child_index_list[0] + 1
+            index = child_indices[0] if type(subtree[0]) == list else child_indices[0] + 1
 
             return self.set_subtree(new_subtree=new_subtree,
                                     subtree=subtree[index],
-                                    child_index_list=child_index_list[1:])
+                                    child_indices=child_indices[1:])
 
 
     def get_node_list(self, prefix='', node_list=None, subtree=None):

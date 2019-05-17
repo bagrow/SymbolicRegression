@@ -285,6 +285,120 @@ class Individual(Tree):
 
         return tree
 
+
+    def generate_individual_ptc2(self, max_size, pdist, max_depth=None):
+        """Probabilistic Tree-Creation 2 (ptc2).
+
+        Luke, S. (2000). Two fast tree-creation algorithms for genetic
+        programming. IEEE Transactions on Evolutionary Computation,
+        4(3), 274-283.
+
+        This algorithm is designed to generate a tree of a size between
+        1 and max_size (or bigger by the largest number of inputs to any
+        primitive currently in use.
+
+        Parameters
+        ----------
+        max_size : int
+            The maximum number of nodes of the tree desired. The
+            trees may be a bit bigger than this.
+        pdist : list
+            List of probabilities (summing to 1) that determine
+            the likelihood of selecting 1, 2, ..., max_size as
+            the desired size for this specific run of the function.
+            This list must have length max_size.
+        max_depth : int (default=self.max_depth)
+            The maximum depth of tree to be generated.
+
+        Examples
+        --------
+        The following example will actually generate the individual
+        twice: once with the grow or full method, which is chosen
+        at random by the Individual constructor and for a second
+        time when ptc2 is called. Perhaps I should make a flag
+        to not generate a tree when Individual is called.
+
+        >>> I = GP.Individual(np.random.RandomState(0),
+                              primitive_set=['*', '+', '-'],
+                              terminal_set=['#x'])
+        >>> I.generate_individual_ptc2(5, [1/5.]*5)
+        >>> I.get_lisp_string()
+        (+ (x0) (x0))
+        """
+
+        max_depth = self.max_depth if max_depth is None else max_depth
+
+        assert self.max_depth >= max_depth, 'ERROR in generate_individual_ptc2: '
+        'max depth for sepcific tree is larger than overall max_depth'
+
+        assert max_size == len(pdist), 'ERROR in generate_individual_ptc2: '
+        'the length of pdist is not the same as max_size.'
+
+        if self.tree is None:
+
+            self.tree = []
+
+        size = self.rng.choice(max_size, p=pdist)
+
+        # If desired size is 1, pick  terminal
+        if size == 1:
+            self.tree = [self.rng.choice(self.T)]
+
+        else:
+            self.tree = [self.rng.choice(self.P)]
+
+            d = 1   # depth so far (if terminals are added)
+            s = 1   # size so far
+            missing_nodes = []
+
+            for i in range(required_children_for_function[self.tree[0]]):
+                missing_nodes.append(((i,), d))
+                self.tree.append([None])    # put space for children
+
+            # Until the size is big enough, add primitives and record
+            # the location of necessary child to add for a functional 
+            # tree.
+            while size > len(missing_nodes) + s and len(missing_nodes) > 0:
+
+                index = self.rng.choice(len(missing_nodes))
+                loc, d = missing_nodes[index]
+
+                if d == 0:
+                    subtree = [self.rng.choice(self.T)]
+                    self.set_subtree(new_subtree=subtree,
+                                     child_indices=loc)
+                    s += 1
+
+                else:
+                    subtree = [self.rng.choice(self.P)]
+
+                    # get locations of children of subtree
+                    # add these to missing_nodes
+                    for i in range(required_children_for_function[subtree[0]]):
+                        missing_nodes.append(((*loc, i), d+1))
+                        subtree.append([None])
+
+                    self.set_subtree(new_subtree=subtree,
+                                     child_indices=loc)
+                    s += 1
+
+                del missing_nodes[index]
+
+            # Fill in the missing nodes with terminals
+            while len(missing_nodes) > 0:
+
+                index = self.rng.choice(len(missing_nodes))
+                loc, d = missing_nodes[index]
+
+                subtree = [self.rng.choice(self.T)]
+                self.set_subtree(new_subtree=subtree,
+                                 child_indices=loc)
+
+                del missing_nodes[index]
+
+        self.apply_rules_to_tree()
+
+
     # ----------------------------------------------------------------------------- #
     #                       Multi-Objective Functions
     # ----------------------------------------------------------------------------- #
@@ -328,7 +442,7 @@ class Individual(Tree):
     #                                  Mutations
     # ----------------------------------------------------------------------------- #
 
-    def get_possible_mutations_no_values(self, new_tree, subtree, child_index_list, mutation_param):
+    def get_possible_mutations_no_values(self, new_tree, subtree, child_indices, mutation_param):
         """Given node in new_tree determine which mutation are possible. Does not require the
         use of values of each node.
 
@@ -344,19 +458,19 @@ class Individual(Tree):
         """
 
         mut_list = [self.node_replacement]
-        mut_param = [(new_tree, child_index_list, mutation_param)]
+        mut_param = [(new_tree, child_indices, mutation_param)]
 
         # Don't include any mutation involving constants if no constants are used.
         if ('#f' in self.T or '#i' in self.T or '#c' in self.T) and self.is_constant(subtree):
 
             mut_list.append(self.constant_mutation)
-            mut_param.append((new_tree, child_index_list))
+            mut_param.append((new_tree, child_indices))
 
         # Don't include any mutation involving variables if a variable is not selected.
         if '#x' in self.T and self.is_variable(subtree):
 
             mut_list.append(self.variable_mutation)
-            mut_param.append((new_tree, child_index_list))
+            mut_param.append((new_tree, child_indices))
 
         return (mut_list, mut_param)
 
@@ -369,7 +483,7 @@ class Individual(Tree):
 
         # Choose one node for the mutation location
         index = self.rng.choice(len(node_list))
-        child_index_list = list(node_list[index])
+        child_indices = node_list[index]
 
         # Make a new tree that is currently identical to the old one.
         new_tree = self.__class__(rng=self.rng, primitive_set=self.P, terminal_set=self.T,
@@ -377,12 +491,12 @@ class Individual(Tree):
                                   tree=copy.deepcopy(self.tree), **self.params)
 
         # Select the subtree in new tree.
-        subtree = new_tree.select_subtree(child_index_list=child_index_list)
+        subtree = new_tree.select_subtree(child_indices=child_indices)
 
         # Get list of possible mutation that could be applied at node.
         mut_list, mut_param = self.get_possible_mutations_no_values(new_tree=new_tree,
                                                                     subtree=subtree,
-                                                                    child_index_list=child_index_list,
+                                                                    child_indices=child_indices,
                                                                     mutation_param=mutation_param)
 
         # Select a mutation at random (uniformly) to apply.
@@ -396,7 +510,7 @@ class Individual(Tree):
         return mutated_ind
 
 
-    def node_replacement(self, root_node, child_index_list, mutation_param=6):
+    def node_replacement(self, root_node, child_indices, mutation_param=6):
         """Create new subtree and place it at choice_list.
 
         Parameters:
@@ -407,22 +521,22 @@ class Individual(Tree):
 
             mutation_param: specifies the max depth of the subtree."""
 
-        if child_index_list == ['']:
+        if child_indices == [''] or child_indices == (''):
 
             depth = 0
 
         else:
 
-            depth = len(child_index_list)
+            depth = len(child_indices)
 
         new_subtree = self.generate_random_individual_grow(min(mutation_param, self.max_depth - depth))
 
-        root_node.set_subtree(new_subtree, child_index_list)
+        root_node.set_subtree(new_subtree, child_indices)
 
         return root_node
 
 
-    def constant_mutation(self, root_node, child_index_list):
+    def constant_mutation(self, root_node, child_indices):
         """Perturb a constant node.
 
         Parameters:
@@ -431,7 +545,7 @@ class Individual(Tree):
             child_index_list: A list of child indices specifying the location for
             the mutation to take place."""
 
-        leaf = root_node.select_subtree(child_index_list)
+        leaf = root_node.select_subtree(child_indices)
 
         if '#c' in self.T:
 
@@ -446,7 +560,7 @@ class Individual(Tree):
         return root_node
 
 
-    def variable_mutation(self, root_node, child_index_list):
+    def variable_mutation(self, root_node, child_indices):
         """Change variable to another variable.
 
         Parameters:
@@ -455,7 +569,7 @@ class Individual(Tree):
             child_index_list: A list of child indices specifying the location for
             the mutation to take place."""
 
-        leaf = root_node.select_subtree(child_index_list)
+        leaf = root_node.select_subtree(child_indices)
 
         if '#x' in self.T:
 
