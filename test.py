@@ -66,6 +66,23 @@ class TestTree(unittest.TestCase):
                          child_indices=(1, 0))
         self.assertEqual(tree.get_lisp_string(), '(* (x0) (* (- (x0) (3)) (x0)))')
 
+    def test_select_subtree_list(self):
+        """Test that select_subtree works if
+        child_index_list is specified by list"""
+
+        tree = setup('(* (x0) (* (x1) (x2)))')
+        subtree = tree.select_subtree(child_indices=[1, 0])
+        self.assertEqual(subtree, ['x1'])
+
+
+    def test_select_subtree_tuple(self):
+        """Test that select_subtree works if
+        child_index_list is specified by tuple"""
+
+        tree = setup('(* (x0) (* (x1) (x2)))')
+        subtree = tree.select_subtree(child_indices=(1, 0))
+        self.assertEqual(subtree, ['x1'])
+
 
 class TestIndividual(unittest.TestCase):
 
