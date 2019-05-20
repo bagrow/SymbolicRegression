@@ -359,33 +359,108 @@ def get_extrapolation_and_interpolation_data(rng, f, A, B, noise_std=0,
     return np.array((ti_data, te_data))
 
 
-def read_data(filename):
-    """Get training, validation, and testing (both interpolation and extrapolation) data.
+def read_data(filename, one_file=False):
+    """Get training, validation, and testing
+    (both interpolation and extrapolation) data.
 
     Parameters
     ----------
     filename : string
-        Base location of data excluding _training.csv for example."""
+        Base location of data excluding _training.csv for example.
+    one_file : bool (default=False)
+        If True, only get the the one file. Also, nothing
+        will be appended to th end of filename.
 
-    df = pd.read_csv(filename + '_training.csv')
-    df2 = pd.read_csv(filename + '_validation.csv')
-    df3 = pd.read_csv(filename + '_testing_interpolation.csv')
-    df4 = pd.read_csv(filename + '_testing_extrapolation.csv')
+    Returns
+    -------
+    np.array
+    The contents of the file specified or the
+    contents of several files if one_file=False.
+    """
 
-    training = df.iloc[:, :].values
-    validation = df2.iloc[:, :].values
-    testing_int = df3.iloc[:, :].values
-    testing_ext = df4.iloc[:, :].values
+    if one_file:
+        df = pd.read_csv(filename)
 
-    return np.array([training,
-                     validation,
-                     testing_int,
-                     testing_ext])
+        return df.iloc[:, :].values
+
+    else:
+        df = pd.read_csv(filename + '_training.csv')
+        df2 = pd.read_csv(filename + '_validation.csv')
+        df3 = pd.read_csv(filename + '_testing_interpolation.csv')
+        df4 = pd.read_csv(filename + '_testing_extrapolation.csv')
+
+        training = df.iloc[:, :].values
+        validation = df2.iloc[:, :].values
+        testing_int = df3.iloc[:, :].values
+        testing_ext = df4.iloc[:, :].values
+
+        return np.array([training,
+                         validation,
+                         testing_int,
+                         testing_ext])
+
+
+def split_data(rng, data, ratio, with_replacement=False):
+    """Split the dataset by the given
+    ratio that determines the relative
+    sizes.
+
+    Parmeters
+    ---------
+    rng : random number generator
+        (ex. np.random.RandomState(0))
+    data : 2d iterable
+        The data to be split. Each row of data
+        show be a complete datum.
+    ratio : 1d iterable
+        The ratio used in splitting. For example,
+        use 1:2 to split data into two subsets:
+        the first of size have of the second.
+    with_replacement : bool (default=False)
+        If True, the subsets of data may have
+        elements in common.
+
+    Examples
+    --------
+    """
+
+    num_samples = len(data)
+    sizes = np.multiply(num_samples/sum(ratio), ratio).astype(int, copy=False)
+
+    if sum(sizes) != num_samples:
+        sizes[-1] += num_samples - sum(sizes)
+
+    print('sizes', sizes)
+
+    remaining_indices = range(len(data))
+    dataset = []
+
+    for s in sizes:
+
+        indices = rng.choice(remaining_indices, size=s, replace=with_replacement)
+        data_split = data[np.array(indices), :]
+        print(data_split.shape)
+        dataset.append(data_split)
+
+        remaining_indices = [i for i in range(len(data)) if i not in indices]
+
+    # left_endpoints = [np.min(x) for x in dataset[:, 1:].T]
+    # right_endpoints = [np.max(x) for x in dataset[:, 1:].T]
+    # input_endpoints = np.vstack((left_endpoints, right_endpoints)).T
+    # params['interval'] = [interval([a, b]) for a, b in input_endpoints]
+    # print(params['interval'])
+
+    # dataset = np.array([train_data,
+    #                     val_data])
+
+    return np.array(dataset)
 
 
 if __name__ == '__main__':
 
-    f = lambda x: x**2
-    data = get_extrapolation_and_interpolation_data(np.random.RandomState(0), f, [0], [1], noise_std=0.01, data_size=5)
+    data = read_data(os.path.join(os.environ['DATASET_PATH'], 'uci_datasets/wine/data.csv'), one_file=True)
     print(data)
     print(data.shape)
+
+    dataset = split_data(np.random.RandomState(0), data, (1, 2))
+    print(dataset)
