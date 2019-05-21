@@ -114,7 +114,7 @@ class Tree:
 
         Parameters
         ----------
-            node : str
+        node : str
         """
 
         if node == "#i":
@@ -530,15 +530,13 @@ class Tree:
 
         subtree = self.tree if subtree is None else subtree
 
-        if child_indices == [] or child_indices == ():
+        for index in child_indices:
 
-            return subtree
+            # Add 1 because subtree[0] is the
+            # label of that subtree's root.
+            subtree = subtree[index+1]
 
-        else:
-
-            index = child_indices[0] if type(subtree[0]) == list else child_indices[0]+1
-
-            return self.select_subtree(subtree=subtree[index], child_indices=child_indices[1:])
+        return subtree
 
 
     def set_subtree(self, new_subtree, child_indices, subtree=None):
@@ -568,20 +566,18 @@ class Tree:
 
         subtree = self.tree if subtree is None else subtree
 
-        if child_indices == [] or child_indices == ():
+        for index in child_indices:
 
-            # [:] means the locations of stored values of subtree
-            # will be changed.
-            # Thus, self.tree will be effected by this assignment.
-            subtree[:] = new_subtree
+            # Add 1 because subtree[0] is the
+            # label of that subtree's root.
+            subtree = subtree[index+1]
 
-        else:
+        # [:] means the locations of stored values
+        # of subtree will be changed. Thus, self.tree
+        # will be effected by this assignment.
+        subtree[:] = new_subtree
 
-            index = child_indices[0] if type(subtree[0]) == list else child_indices[0] + 1
-
-            return self.set_subtree(new_subtree=new_subtree,
-                                    subtree=subtree[index],
-                                    child_indices=child_indices[1:])
+        return subtree
 
 
     def get_node_list(self, prefix=(), node_list=None, subtree=None):
