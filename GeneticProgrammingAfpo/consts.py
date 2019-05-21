@@ -7,7 +7,8 @@ max_generations = 1000
 max_front_size = int(np.sqrt(population_size))
 max_depth = 6
 
-# Functions from "Genetic Programming Needs Better Benchmarks" 2012.
+# Functions from mainly from
+# "Genetic Programming Needs Better Benchmarks" 2012.
 function_dict = {'Koza-1': {'f': lambda x: x**4 + x**3 + x**2 + x,
                             'type': 'urand',
                             'a': -1,
@@ -142,7 +143,8 @@ function_dict = {'Koza-1': {'f': lambda x: x**4 + x**3 + x**2 + x,
                               'size': 30}
                  }
 
-# Dictionary explaining how many children (inputs) are needed for each function.
+# Dictionary explaining how many children (inputs)
+# are needed for each function.
 required_children_for_function = {'*': 2,
                                   '+': 2,
                                   '-': 2,
@@ -164,7 +166,8 @@ required_children_for_function = {'*': 2,
 
 functions_by_input = [[key for key, value in required_children_for_function.items() if value == i] for i in range(1, 3)]
 
-# Make a special standard output function and use this translation for function creation.
+# Make a special standard output function
+# and use this translation for function creation.
 math_translate = {'p/': 'pdivide',
                   '%': 'pdivide',
                   '^': 'np.power',
@@ -183,6 +186,7 @@ math_translate = {'p/': 'pdivide',
                   'cos': 'np.cos',
                   'exp': 'np.exp'}
 
+# This is another translation for use with pyinterval.
 math_translate_interval_arithmetic = {'p/': 'operator.truediv',
                                       'CDs': 'CDs_interval',
                                       # 'psqrt': 'psqrt',

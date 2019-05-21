@@ -84,13 +84,46 @@ class TestTree(unittest.TestCase):
         self.assertEqual(subtree, ['x1'])
 
 
+def setup_individual():
+
+    I = GP.Individual(np.random.RandomState(0),
+                      primitive_set=['*', '+', '-'],
+                      terminal_set=['#x'])
+
+    return I
+
+
 class TestIndividual(unittest.TestCase):
+
+    def test_generate_individual_full(self):
+
+        I = setup_individual()
+
+        sizes = []
+
+        for _ in range(100):
+            I.tree = I.generate_individual_full(5)
+            sizes.append(I.get_depth())
+
+        self.assertTrue(np.all(np.array(sizes) == 5))
+
+
+    def test_generate_individual_grow(self):
+
+        I = setup_individual()
+
+        sizes = []
+
+        for _ in range(100):
+            I.tree = I.generate_individual_grow(5)
+            sizes.append(I.get_depth())
+
+        self.assertTrue(np.all(np.array(sizes) <= 5))
+
 
     def test_generate_individual_ptc2(self):
 
-        I = GP.Individual(np.random.RandomState(0),
-                          primitive_set=['*', '+', '-'],
-                          terminal_set=['#x'])
+        I = setup_individual()
 
         sizes = []
 
@@ -99,6 +132,53 @@ class TestIndividual(unittest.TestCase):
             sizes.append(I.get_tree_size())
 
         self.assertTrue(np.all(np.array(sizes) <= 5))
+
+
+    def test_dominates_same_ind(self):
+        """Test if newer of two identical
+        individuals dominates."""
+
+        I1 = setup_individual()
+        I2 = setup_individual()
+
+        I1.fitness = I2.fitness = np.array([1., 5.])
+
+        self.assertTrue(not I1.dominates(I2) and I2.dominates(I1))
+
+    def test_dominates_not_same_dominates(self):
+        """Test dominates with different individuals."""
+
+        I1 = setup_individual()
+        I2 = setup_individual()
+
+        I1.fitness = np.array([1., 4.])
+        I2.fitness = np.array([1., 5.])
+
+        self.assertTrue(I1.dominates(I2) and not I2.dominates(I1))
+
+    def test_dominates_not_same_dominates2(self):
+        """Test dominates with different individuals
+        (better in all)."""
+
+        I1 = setup_individual()
+        I2 = setup_individual()
+
+        I1.fitness = np.array([.9, 4.])
+        I2.fitness = np.array([1., 5.])
+
+        self.assertTrue(I1.dominates(I2) and not I2.dominates(I1))
+
+    def test_dominates_not_same_non_dominated(self):
+        """Test dominates with different individuals
+        (non-dominated)."""
+
+        I1 = setup_individual()
+        I2 = setup_individual()
+
+        I1.fitness = np.array([1., 4.])
+        I2.fitness = np.array([.9, 5.])
+
+        self.assertTrue(not I1.dominates(I2) and not I2.dominates(I1))
 
 
 if __name__ == '__main__':

@@ -2,18 +2,56 @@ from .individual import Individual
 from .consts import *
 
 import pandas as pd
-# import numpy as np
 
 import os
 import copy
 
 
 class GeneticProgramming:
+    """This class is used to create a population of Individuals
+    and evolve them to solve a particular dataset"""
 
+    def __init__(self, rng, pop_size, primitive_set, terminal_set, data,
+                 test_data, prob_mutate, prob_xover, num_vars=1,
+                 init_max_depth=6, max_depth=17, individual=Individual,
+                 mutation_param=3, **individual_params):
+        """Initialize GeneticProgramming
 
-    def __init__(self, rng, pop_size, primitive_set, terminal_set, data, test_data,
-                 prob_mutate, prob_xover, num_vars=1, init_max_depth=6, max_depth=17,
-                 individual=Individual, mutation_param=3, **individual_params):
+        Parameters
+        ----------
+        rng : random number generator
+            For example let rng=np.random.RandomState(0)
+        pop_size : int
+            Number of individuals to put in the population.
+        primitive_set : list
+            A list of all primitive (operators/functions)
+            that may be used in trees.
+        terminal_set: list
+            A list of all allowed terminals (constants, variables).
+        data : np.array
+            An np.array of 2D np.arrays. At the top layer, the
+            list is split into training and validation datasets.
+            Next, into the actual data with output followed by
+            each input. That is, a row of data is of the form
+            y, x0, x1, ...
+        test_data : np.array
+            A 2D np.arrays. A row of data is of the form
+            y, x0, x1, ...
+        num_vars : int (default=1)
+            The number of input variables to use. This must be
+            specified if more than one input variable is necessary.
+        init_max_depth : int (default=6)
+            A non-negative integer that limits the depth of the
+            trees initially created.
+        max_depth : int (default=17)
+            A non-negative integer that limits the depth of the
+            tree.
+        individual : Individual (or superclass)
+            The version of the Individual class to use.
+        mutation_param : int
+            Mutation parameter describing the max depth of subtree
+            to be created on mutation.
+        """
 
         self.max_depth = max_depth
         self.pop_size = pop_size
@@ -33,30 +71,40 @@ class GeneticProgramming:
 
         self.non_dominated_front = {}
 
-        self.pop = self.generate_random_population_ramped_half_and_half(self.pop_size, init_max_depth)
+        self.pop = self.generate_population_ramped_half_and_half(self.pop_size, init_max_depth)
 
         # mutation parameter stuff
         if self.mutation_param == 7:
-
             self.mutation_param = self.rng.randint(1, 6)
 
         elif self.mutation_param == 8:
-
             self.mutation_param = self.rng.randint(2, 6)
 
         elif self.mutation_param == 9:
-
             self.mutation_param = self.rng.randint(4, 5)
 
 
-    def generate_random_population_ramped_half_and_half(self, size, init_max_depth):
+    def generate_population_ramped_half_and_half(self, size, init_max_depth):
+        """Generate the population using the ramped half and half method.
+        Generate equal number of individuals with full and grow method and
+        an equal number of each of those with depth of size
+        1, 2, 3, ... max_depth.
+
+        Parameters
+        ----------
+        size : int
+            Desired population size
+        init_max_depth : int
+            Max depth to use when generating trees.
+        """
 
         new_pop = []
 
         group_size = int(size / (init_max_depth))
         half_group_size = int(group_size / 2)
 
-        # make have the individual with the grow method and the other half with the full method
+        # make half the individual with the grow method and the
+        # other half with the full method
         # increase max depth as we go
         for d in range(1, init_max_depth+1):
 
@@ -69,7 +117,8 @@ class GeneticProgramming:
                                                depth=d, method='grow', max_depth=self.max_depth,
                                                **self.params))
 
-            # if group size doesn't divide easily make another individual with either grow or full
+            # if group size doesn't divide easily make another
+            # individual with either grow or full
             if group_size % 2 != 0:
 
                 new_pop.append(self.Individual(self.rng, self.P, self.T, num_vars=self.num_vars,
@@ -90,9 +139,15 @@ class GeneticProgramming:
 
 
     def size_fair_crossover(self, parents):
-        """Crossover parents (list of 2 nodes) by selection the first
+        """Crossover parents (list of 2 nodes) by selecting the first
         crossover point normally. Then, ensure a final tree (only one)
-        that has depth less than max depth."""
+        that has depth less than max depth.
+
+        Parameters
+        ----------
+        parents : iterable (of Individuals)
+            These are the two parents to crossover.
+        """
 
         ind1 = copy.deepcopy(parents[0])
         ind2 = copy.deepcopy(parents[1])
@@ -111,7 +166,6 @@ class GeneticProgramming:
 
         # if only root node, return a parent
         if ind1.is_leaf() and ind2.is_leaf():
-
             return ind1
 
         list1 = ind1.get_node_list()
@@ -171,24 +225,66 @@ class GeneticProgramming:
 
 
     def compute_fitness(self):
-        """Compute fitness for all individuals. Not the individuals on
-        the front so that error is not recalculated."""
+        """Compute fitness (error) for all individuals."""
 
         for i, individual in enumerate(self.pop):
+            self.evaluate_individual(individual, self.data)
 
-            self.evaluate_individual(individual, self.data, False)
 
+    def evaluate_individual(self, ind, data):
+        """Evaluate the individual fitness and number of nodes.
+        This method is likely to be overwritten by a child
+        class when altering the algorithm.
 
-    def evaluate_individual(self, ind, data, is_non_dominated):
-        """Evaluate the individual fitness and worst neighbors score."""
+        Parameters
+        ----------
+        ind : Individual
+            Individual whose fitness is to be calculated.
+        data : np.array
+            An np.array of 2D np.arrays. At the top layer, the
+            list is split into training and validation datasets.
+            Next, into the actual data with output followed by
+            each input. That is, a row of data is of the form
+            y, x0, x1, ...
+        """
 
-        ind.evaluate_individual_error(data, is_non_dominated)
+        ind.evaluate_individual_error(data)
 
         # number of nodes
         ind.fitness[1] = ind.get_tree_size()
 
 
     def get_fitness_info(self, group):
+        """Get the summary of the population. This includes:
+        max, min, median, and mean of first fitness objective,
+        second fitness objective, number of nodes in trees, depth
+        of trees, and validation error. It also returns the front
+        size. See return for order of these things.
+
+        TODO: It would be better to use a dictionary so that the
+        numbers don't get mixed up.
+
+        Parameters
+        ----------
+        group : list
+            The list of individuals to get the statistic from.
+            For example, use entire population with self.pop or
+            the entire front with self.non_dominated_front.values().
+
+        Returns
+        -------
+        summary : list
+            The summary is returned in the following order where
+            f1 = fitness objective 1 (error), f2 = fitness objective 2
+            (number of nodes, which is redundant in this case),
+            s = number of nodes, d = tree depth, v = validation error
+                [front_size,
+                min_f1, avg_f1, median_f1, max_f1,
+                min_f2, avg_f2, median_f2, max_f2,
+                min_s, avg_s, median_s, max_s,
+                min_d, avg_d, median_d, max_d,
+                min_v, avg_v, median_v, max_v]
+        """
 
         front_size = len(self.non_dominated_front)
 
@@ -236,30 +332,42 @@ class GeneticProgramming:
 
 
     def get_non_dominated_front(self):
-        """Look at the population and determine which individual are non-dominated. Store these individual in a
-        dict called non_dominated_front. The keys are the index in the population."""
+        """Look at the population and determine which individuals
+        are non-dominated. Store these individual in a dict called
+        non_dominated_front. The keys are the index in the population."""
 
         # Initialize the non dominated front as a dict for easy comparison
         self.non_dominated_front = {}
 
-        # Check each individual against every other individual. If none dominate than the current individual
-        # is on the front.
+        # Check each individual against every other individual.
+        # If none dominate, the current individual is on the front.
         for i, ind in enumerate(self.pop):
 
             for j, ind2 in enumerate(self.pop):
 
                 # This should be the most common.
                 if ind2.dominates(ind):
-
                     break
 
             else:  # no break (no one dominates ind)
-
                 self.non_dominated_front[i] = copy.deepcopy(ind)
                 self.pop[i].parentID = None
 
 
     def run_generation(self, gen, num_mut, num_xover):
+        """Stuff to repeat every generation.
+
+        Parameters
+        ----------
+        gen : int
+            The current generation.
+        num_mut : int
+            The number of individuals to generate through
+            mutations.
+        num_xover : int
+            The number of individuals to generate through
+            crossover.
+        """
 
         # Make a dictionary of front individuals. Keep key as index.
         self.get_non_dominated_front()
@@ -297,18 +405,31 @@ class GeneticProgramming:
 
                 mut_count += 1
 
-        # Evaluate the entire population. Skip error objective for individuals on front.
+        # Evaluate the entire population.
         self.compute_fitness()
 
 
     def save_final_error(self, filename):
-        """Save training, validation, and testing error to filename."""
+        """This method is meant to be used to
+        save the final generation of individuals
+        to a .csv file. But, it can be used at any
+        point during evolution.
+
+        The info that will be saved is lisp, fitness
+        objective 1 (error), validation error, test
+        error, fitness objective 2 (number of nodes).
+
+        Parameters
+        ----------
+        filename : str
+            The location to save the file.
+        """
 
         # Get data.
         fitness_all = [[ind.get_lisp_string(),
                         ind.fitness[0],
                         ind.validation_fitness,
-                        ind.evaluate_test_points_fast(self.test_data),
+                        ind.evaluate_test_points(self.test_data),
                         ind.fitness[1]] for ind in self.pop]
 
         # Save data.
@@ -321,6 +442,7 @@ class GeneticProgramming:
                           'Testing',
                           'Objective 2 on Training Data'])
 
+        # if we are keeping track of the non-dominated front
         if len(self.non_dominated_front) != 0:
 
             # Save the data again, but exclude anyone not on the front.
@@ -328,7 +450,7 @@ class GeneticProgramming:
                               self.non_dominated_front[key].get_lisp_string(),
                               self.non_dominated_front[key].fitness[0],
                               self.non_dominated_front[key].validation_fitness,
-                              self.non_dominated_front[key].evaluate_test_points_fast(self.test_data),
+                              self.non_dominated_front[key].evaluate_test_points(self.test_data),
                               self.non_dominated_front[key].fitness[1]] for key in self.non_dominated_front]
 
             df = pd.DataFrame(fitness_front)
@@ -342,8 +464,18 @@ class GeneticProgramming:
                               'Objective 2 on Training Data'])
 
 
-    def run(self, rep, output_path=os.environ['GP_DATA'], output_file='fitness_data.csv'):
-        """Run the given number of generations with the given parameters."""
+    def run(self, rep, output_path=os.environ['GP_DATA'],
+            output_file='fitness_data.csv'):
+        """Run the given number of generations with the given parameters.
+
+        Parameters
+        ----------
+        rep : int
+            This number is repetition number.
+        output_path : str
+            Location to save the data generated. This data includes
+            summaries of fintesses and other measurements as well as
+            individuals."""
 
         print('output path', output_path)
         print('output file', output_file)
@@ -357,12 +489,10 @@ class GeneticProgramming:
 
         print(info[-1])
 
-        if not os.path.exists(output_path):
-
-            try:
-                os.makedirs(output_path)
-            except FileExistsError:
-                pass
+        try:
+            os.makedirs(output_path)
+        except FileExistsError:
+            pass
 
         header = ['Generation', 'Front Size',
                   'Minimum Error', 'Average Error', 'Median Error', 'Maximum Error',
@@ -387,17 +517,13 @@ class GeneticProgramming:
         # for a fixed number of generations
         for i in range(1, max_generations+1):
 
-            # Do all the generation stuff --- mutate, evaluated, compute front...
+            # Do all the generation stuff --- mutate, evaluate...
             self.run_generation(i, num_mut=num_mut, num_xover=num_xover)
 
             info.append(self.get_fitness_info(self.pop))
             info[-1].insert(0, i)
 
             print(info[-1])
-
-            # if front is the whole population, further progress is not possible, so terminate.
-            if len(self.non_dominated_front) == population_size:
-                break
 
         # Save generational data
         df = pd.DataFrame(info)
@@ -412,7 +538,6 @@ class GeneticProgramming:
     #        Strength Pareto Evolutionary Algorithm (SPEA2)
     # ------------------------------------------------------------ #
     # These functions are not curently used.
-
 
     def spea2(self, rng, archive_size, archive, population, number_xo_parents, number_mut_parents):
         """Algorithm description here: https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/145755/eth-24689-01.pdf

@@ -1,23 +1,35 @@
 from .GeneticProgramming import GeneticProgramming
-from .individual import Individual
 
 import numpy as np
 
 
 class GeneticProgrammingAfpo(GeneticProgramming):
+    """This class inherits GeneticProgramming.
+    It adds and alters some functionality. This class
+    is an implementation of Age-Fitness Pareto Optimization
+    (AFPO).
 
+    Schmidt M., Lipson H. (2011) Age-Fitness Pareto Optimization.
+    In: Riolo R., McConaghy T., Vladislavleva E. (eds) Genetic
+    Programming Theory and Practice VIII. Genetic and Evolutionary
+    Computation, vol 8. Springer, New York, NY"""
 
-    def __init__(self, rng, pop_size, primitive_set, terminal_set, data, test_data,
-                 prob_mutate, prob_xover, num_vars=1, init_max_depth=6, max_depth=17,
-                 individual=Individual, **individual_params):
+    def evaluate_individual(self, ind, data):
+        """Evaluate the individual fitness and update
+        the second fitness objective with the current
+        age of the individual.
 
-        GeneticProgramming.__init__(self, rng, pop_size, primitive_set, terminal_set, data, test_data,
-                                    prob_mutate, prob_xover, num_vars, init_max_depth, max_depth,
-                                    individual, **individual_params)
-
-
-    def evaluate_individual(self, ind, data, non_dominated_front):
-        """Evaluate the individual fitness and worst neighbors score."""
+        Parameters
+        ----------
+        ind : Individual
+            Individual whose fitness is to be calculated.
+        data : np.array
+            An np.array of 2D np.arrays. At the top layer, the
+            list is split into training and validation datasets.
+            Next, into the actual data with output followed by
+            each input. That is, a row of data is of the form
+            y, x0, x1, ...
+        """
 
         ind.evaluate_individual_error(data)
 
@@ -28,9 +40,13 @@ class GeneticProgrammingAfpo(GeneticProgramming):
     def size_fair_crossover(self, parents):
         """Crossover parents (list of 2 nodes) by selection the first
         crossover point normally. Then, ensure a final tree (only one)
-        that has depth less than max depth.
+        that has depth less than max depth. Child receives max age
+        of parents.
 
-        Child receives max age of parents"""
+        Parameters
+        ----------
+        parents : iterable (of Individuals)
+            These are the two parents to crossover."""
 
         ind = GeneticProgramming.size_fair_crossover(self, parents)
 
@@ -40,7 +56,20 @@ class GeneticProgrammingAfpo(GeneticProgramming):
 
 
     def run_generation(self, gen, num_mut, num_xover):
-        """Compute front, then mutate and evaluate individuals."""
+        """Double the size of the population. Then, remove
+        individuals via binary tournament selection.
+
+        Parameters
+        ----------
+        gen : int
+            The current generation.
+        num_mut : int
+            The number of individuals to generate through
+            mutations.
+        num_xover : int
+            The number of individuals to generate through
+            crossover.
+        """
 
         xover_parents = self.rng.choice(self.pop, size=(num_xover, 2))
         mut_parents = self.rng.choice(self.pop, size=num_mut)
@@ -88,12 +117,12 @@ class GeneticProgrammingAfpo(GeneticProgramming):
 
                 mut_count += 1
 
-        # Evaluate the entire population. Skip error objective for individuals on front.
+        # Evaluate the entire population.
         self.compute_fitness()
 
-        # If everything is working, I don't think max_size should ever equal size of front.
-        # Thus, it is not necessary to compute the front, which speeds up generations.
-        # self.get_non_dominated_front()
+        # If everything is working, I don't think max_size should ever
+        # equal size of front. Thus, it is not necessary to compute the
+        # front, which speeds up generations.
 
         max_size = np.max((self.pop_size, len(self.non_dominated_front)))
 
@@ -119,7 +148,16 @@ class GeneticProgrammingAfpo(GeneticProgramming):
     def get_pop_data(self, gen):
         """Get data for each individual in the population.
 
-        [gen, indiv_index, error, age, equation]"""
+        Parameters
+        ----------
+        gen : int
+            The generation number.
+
+        Returns
+        -------
+        A list of lists each row is of the form
+        [gen, individual_index, error, age, equation]
+        """
 
         return [[gen, i, p.fitness[0], p.age, p.get_lisp_string()]
                 for i, p in enumerate(self.pop)]
