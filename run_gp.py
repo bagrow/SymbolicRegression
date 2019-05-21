@@ -1,6 +1,7 @@
-from classes.GeneticProgrammingAfpo import GeneticProgrammingAfpo
-from consts import *
-import functions.data_setup as ds
+from GeneticProgrammingAfpo import GeneticProgrammingAfpo
+import GeneticProgrammingAfpo.data_setup as ds
+from GeneticProgrammingAfpo.consts import *
+from GeneticProgrammingAfpo.protected_functions import *
 
 import numpy as np
 
@@ -53,7 +54,7 @@ else:
 num_vars = 1 if key not in number_of_input_variables else number_of_input_variables[key]
 print('num_vars', num_vars)
 
-noise_std = 0.01
+noise_std = 0.1
 
 # --------------------------------------------------------- #
 #                      END PARAMETERS
@@ -61,15 +62,15 @@ noise_std = 0.01
 
 # always use the same seed for each run in exp
 test_data = ds.get_datasets(rng=np.random.RandomState(exp),
-                            f=function_dict[key][0],
-                            A=function_dict[key][1]['a'],
-                            B=function_dict[key][1]['b'],
+                            f=function_dict[key]['f'],
+                            A=function_dict[key]['a'],
+                            B=function_dict[key]['b'],
                             noise_percent=None,
                             noise_std=noise_std,
                             data_size=int(100000 / num_vars))[0]
 
 # initialize and run gp
-primitive_set = ['+', '*', '-']
+primitive_set = ['+', '*', '-', '%']
 terminal_set = ['#x', '#f']
 
 
@@ -78,12 +79,12 @@ def run_single(rng, pop_size, primitive_set, terminal_set, test_data,
                rep, output_path, output_file, **params):
 
     dataset = ds.get_datasets(rng=np.random.RandomState(rep),
-                              f=function_dict[key][0],
-                              A=function_dict[key][1]['a'],
-                              B=function_dict[key][1]['b'],
+                              f=function_dict[key]['f'],
+                              A=function_dict[key]['a'],
+                              B=function_dict[key]['b'],
                               noise_percent=None,
                               noise_std=noise_std,
-                              data_size=function_dict[key][1]['size'])
+                              data_size=function_dict[key]['size'])
 
     gp = GeneticProgrammingAfpo(rng=rng,
                                 pop_size=pop_size,

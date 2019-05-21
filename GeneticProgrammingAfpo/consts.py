@@ -3,7 +3,7 @@ from GeneticProgrammingAfpo.protected_functions import *
 import numpy as np
 
 population_size = 100
-max_generations = 30
+max_generations = 1000
 max_front_size = int(np.sqrt(population_size))
 max_depth = 6
 

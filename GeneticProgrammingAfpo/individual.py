@@ -667,7 +667,6 @@ class Individual(Tree):
         else:
 
             self.f = get_function(f_string)
-            print(f_string)
 
             error = lambda x, y, f=self.f: np.sqrt(np.mean(np.power(f(x) - y, 2)))
 

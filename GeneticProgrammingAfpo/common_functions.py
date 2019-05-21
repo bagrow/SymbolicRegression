@@ -1,5 +1,6 @@
-# This import is absolutely necessary. I think it is because
+# These two imports are absolutely necessary. I think it is because
 # the lambda strings (which contain np functions) are eval-ed here.
+from .protected_functions import *
 import numpy as np
 
 import copy
