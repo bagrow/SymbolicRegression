@@ -113,6 +113,7 @@ class GeneticProgramming:
                 new_pop.append(self.Individual(self.rng, self.P, self.T, num_vars=self.num_vars,
                                                depth=d, method='full', max_depth=self.max_depth,
                                                **self.params))
+
                 new_pop.append(self.Individual(self.rng, self.P, self.T, num_vars=self.num_vars,
                                                depth=d, method='grow', max_depth=self.max_depth,
                                                **self.params))

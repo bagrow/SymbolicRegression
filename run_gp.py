@@ -8,9 +8,6 @@ import numpy as np
 import os
 import argparse
 import time
-import sys
-
-sys.setcheckinterval(1000000)     # If running thread, this is not a good idea
 
 # --------------------------------------------------------- #
 #                      PARAMETERS

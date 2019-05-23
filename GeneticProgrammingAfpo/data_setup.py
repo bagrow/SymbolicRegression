@@ -430,8 +430,6 @@ def split_data(rng, data, ratio, with_replacement=False):
     if sum(sizes) != num_samples:
         sizes[-1] += num_samples - sum(sizes)
 
-    print('sizes', sizes)
-
     remaining_indices = range(len(data))
     dataset = []
 
@@ -439,7 +437,6 @@ def split_data(rng, data, ratio, with_replacement=False):
 
         indices = rng.choice(remaining_indices, size=s, replace=with_replacement)
         data_split = data[np.array(indices), :]
-        print(data_split.shape)
         dataset.append(data_split)
 
         remaining_indices = [i for i in range(len(data)) if i not in indices]
@@ -453,7 +450,7 @@ def split_data(rng, data, ratio, with_replacement=False):
     # dataset = np.array([train_data,
     #                     val_data])
 
-    return np.array(dataset)
+    return np.array(dataset[:2]), np.array(dataset[2])
 
 
 if __name__ == '__main__':
