@@ -53,6 +53,12 @@ def AQ(x, y):
     return np.divide(x, np.sqrt(np.power(y, 2) + 1))
 
 
+def unary_minus(x):
+    """Effectively a negative sign"""
+
+    return np.negative(x)
+
+
 # For testing
 if __name__ == '__main__':
 

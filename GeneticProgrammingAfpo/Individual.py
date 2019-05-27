@@ -493,7 +493,7 @@ class Individual(Tree):
     #                                  Mutations
     # ----------------------------------------------------------------------------- #
 
-    def get_possible_mutations_no_values(self, new_tree, subtree, child_indices, mutation_param):
+    def get_possible_mutations(self, new_tree, subtree, child_indices, mutation_param):
         """Given node in new_tree determine which mutations are possible.
         Does not require the use of values of each node.
 
@@ -564,10 +564,10 @@ class Individual(Tree):
         subtree = new_tree.select_subtree(child_indices=child_indices)
 
         # Get list of possible mutation that could be applied at node.
-        mut_list, mut_param = self.get_possible_mutations_no_values(new_tree=new_tree,
-                                                                    subtree=subtree,
-                                                                    child_indices=child_indices,
-                                                                    mutation_param=mutation_param)
+        mut_list, mut_param = self.get_possible_mutations(new_tree=new_tree,
+                                                          subtree=subtree,
+                                                          child_indices=child_indices,
+                                                          mutation_param=mutation_param)
 
         # Select a mutation at random (uniformly) to apply.
         index = self.rng.choice(len(mut_list))

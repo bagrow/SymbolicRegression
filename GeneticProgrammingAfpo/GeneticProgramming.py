@@ -476,7 +476,8 @@ class GeneticProgramming:
         output_path : str
             Location to save the data generated. This data includes
             summaries of fintesses and other measurements as well as
-            individuals."""
+            individuals.
+        """
 
         print('output path', output_path)
         print('output file', output_file)
@@ -492,6 +493,7 @@ class GeneticProgramming:
 
         try:
             os.makedirs(output_path)
+
         except FileExistsError:
             pass
 
@@ -506,12 +508,7 @@ class GeneticProgramming:
         num_xover = int(self.prob_xover * population_size)
 
         if num_xover % 2 == 1:
-
             num_xover -= 1
-
-        if not os.path.exists(output_path):
-
-            os.makedirs(output_path)
 
         num_mut = population_size-num_xover
 

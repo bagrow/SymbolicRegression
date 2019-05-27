@@ -3,7 +3,7 @@ from GeneticProgrammingAfpo.protected_functions import *
 import numpy as np
 
 population_size = 100
-max_generations = 1000
+max_generations = 398
 max_front_size = int(np.sqrt(population_size))
 max_depth = 6
 
@@ -162,7 +162,8 @@ required_children_for_function = {'*': 2,
                                   'sin': 1,
                                   'cos': 1,
                                   'psqrt': 1,
-                                  'plog': 1}
+                                  'plog': 1,
+                                  'unary_minus': 1}
 
 functions_by_input = [[key for key, value in required_children_for_function.items() if value == i] for i in range(1, 3)]
 
@@ -184,7 +185,8 @@ math_translate = {'p/': 'pdivide',
                   '/': 'np.divide',
                   'sin': 'np.sin',
                   'cos': 'np.cos',
-                  'exp': 'np.exp'}
+                  'exp': 'np.exp',
+                  'unary_minus': 'unary_minus'}
 
 # This is another translation for use with pyinterval.
 math_translate_interval_arithmetic = {'p/': 'operator.truediv',
@@ -220,4 +222,3 @@ simplification_rules = {'p/': (('&', '&', '1'), ('&', '(0)', '1'), ('(0)', '&', 
 number_of_input_variables = {'RatPol3D': 3,
                              'UBall5D': 5,
                              'Ripple': 2}   # for now everything else is 1
-
