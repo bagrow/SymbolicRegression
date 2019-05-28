@@ -1,10 +1,10 @@
 
 # Import Classes
-from . import tree
-from .tree import Tree
+from . import Tree
+from .Tree import Tree
 
-from . import individual
-from .individual import Individual
+from . import Individual
+from .Individual import Individual
 
 from . import GeneticProgramming
 from .GeneticProgramming import GeneticProgramming
