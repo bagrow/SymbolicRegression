@@ -132,13 +132,31 @@ def difference(list1, list2):
     return new_list
 
 
-if __name__ == '__main__':
+# ------------------------------------------------------------ #
+#                      Folder Setup
+# ------------------------------------------------------------ #
 
-    import numpy as np
 
-    x = np.array([[1, 3], [2, 2], [3, 1], [4, 7]]).T
-    c = np.array([5])
-    expr = 'x[0]*x[1]+c[0]'
+def get_folder(parameters):
+    """Given the values of necessary parameters,
+    create the appropriate folder name.
 
-    f = get_function(expr, const=True)
-    print(f(c, x))
+    Parameters
+    ----------
+    parameters : dict or collections.OrderedDict
+        Each key is the name (in short form)
+        and each value is the value of that
+        parameter. This could be boolean values.
+
+    Returns
+    -------
+    folder_name : str
+        A string that indicates the parameters
+        that will be used in the experiment that
+        will populate this folder. Thus, the str
+        is appropriate for folders.
+    """
+
+    str_values = [str(int(parameters[key])) for key in parameters]
+
+    return '_'.join(key+str_values[i] for i, key in enumerate(parameters))
