@@ -1,5 +1,5 @@
 from .common_functions import union, get_function
-from .tree import Tree
+from .Tree import Tree
 from .consts import *
 from .protected_functions import *
 
