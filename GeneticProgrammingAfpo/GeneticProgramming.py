@@ -1,4 +1,4 @@
-from .individual import Individual
+from .Individual import Individual
 from .consts import *
 
 import pandas as pd
@@ -161,19 +161,19 @@ class GeneticProgramming:
                                num_vars=ind1.num_vars,
                                age=ind1.age,
                                max_depth=ind1.max_depth,
-                               node=ind1.tree,
-                               node_class=ind1.Node,
+                               tree=ind1.tree,
                                **self.params)
 
         # if only root node, return a parent
-        if ind1.is_leaf() and ind2.is_leaf():
+        if len(ind1.tree) == 1 and len(ind2.tree) == 1:
             return ind1
 
         list1 = ind1.get_node_list()
         list2 = ind2.get_node_list()
 
         # pick first crossover point
-        c1 = list(self.rng.choice(list1))
+        index = self.rng.choice(len(list1))
+        c1 = list1[index]
 
         # get depth of c1 node and the subtree connected their
         c1_depth = len(c1)
@@ -232,7 +232,7 @@ class GeneticProgramming:
             self.evaluate_individual(individual, self.data)
 
 
-    def evaluate_individual(self, ind, data):
+    def evaluate_individual(self, ind, data, skip=False):
         """Evaluate the individual fitness and number of nodes.
         This method is likely to be overwritten by a child
         class when altering the algorithm.
@@ -247,9 +247,12 @@ class GeneticProgramming:
             Next, into the actual data with output followed by
             each input. That is, a row of data is of the form
             y, x0, x1, ...
+        skip : bool
+            If true, skip the error calculation
         """
 
-        ind.evaluate_individual_error(data)
+        if not skip:
+            ind.evaluate_individual_error(data)
 
         # number of nodes
         ind.fitness[1] = ind.get_tree_size()
@@ -538,8 +541,47 @@ class GeneticProgramming:
     # These functions are not curently used.
 
     def spea2(self, rng, archive_size, archive, population, number_xo_parents, number_mut_parents):
-        """Algorithm description here: https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/145755/eth-24689-01.pdf
-        Output the nondominated front"""
+        """Algorithm description here:
+
+        https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/145755/eth-24689-01.pdf
+
+        Output the nondominated front. Must compute individual's fitness before
+        call this funtion.
+
+        Parameters
+        ----------
+        rng ; random number generator
+            Example np.random.RandomState(0)
+        archive_size : int
+            The number of individuals to store
+            in the archive.
+        archive : list
+            The individuals already in the archive
+        population : list
+            The individuals currently in the population
+        number_xo_parents : int
+            The number of children to be produced by crossover.by
+            The crossover operation is not actually performed inside
+            this method.
+        number_mut_parents : int
+            The number of children to be produced through mutation
+
+        Returns
+        -------
+        new_archive : list
+            The individuals in the new archive.
+        non_dominated_front : dict
+            The non-dominated front. The key is the index
+            and the value is the individual.
+        ox_parents : list
+            A list of the individuals that will be used
+            as parents for crossover. This is a list of
+            of shape (number_xo_parents ,2)
+        mut_parents : list
+            A list of the individuals that will be used as
+            parents for mutation. This is a list of shape
+            (number_mut_parents).
+        """
 
         # Initialization
         apop = archive + population
@@ -561,9 +603,8 @@ class GeneticProgramming:
 
                 indiv.age += 1
 
-                # Update second fitness objective
-                self.evaluate_individual(indiv, self.data, is_non_dominated=True)
-
+                # Update second fitness objective if age
+                self.evaluate_individual(indiv, self.data, skip=True)
                 new_archive.append(indiv)
 
             else:
@@ -583,13 +624,13 @@ class GeneticProgramming:
                 apop_sorted[len(new_archive)].age += 1
 
                 # Update second fitness objective
-                self.evaluate_individual(apop_sorted[len(new_archive)], self.data, is_non_dominated=True)
+                self.evaluate_individual(apop_sorted[len(new_archive)], self.data, skip=True)
 
                 # Add to archive
                 new_archive.append(apop_sorted[len(new_archive)])
 
         else:   # len(new_archive) > archive_size
-
+            print('archive is too big!')
             while len(new_archive) > archive_size:
 
                 for index, i in enumerate(new_archive):
@@ -614,16 +655,46 @@ class GeneticProgramming:
                         distances_sorted = np.array(distances_sorted)
                         break
 
-        ox_parents = np.vstack(([self.tournament_selection(rng, new_archive, fitnesses_sorted, 2, replacement=True) for _ in range(number_xo_parents)],
-                                [self.tournament_selection(rng, new_archive, fitnesses_sorted, 2, replacement=True) for _ in range(number_xo_parents)])).T
+        # Mating Selection
+        ox_parents = np.vstack(([self.tournament_selection(rng, new_archive, fitnesses_sorted, replacement=True) for _ in range(number_xo_parents)],
+                                [self.tournament_selection(rng, new_archive, fitnesses_sorted, replacement=True) for _ in range(number_xo_parents)])).T
 
-        mut_parents = [self.tournament_selection(rng, new_archive, fitnesses_sorted, 2, replacement=True)
+        mut_parents = [self.tournament_selection(rng, new_archive, fitnesses_sorted, replacement=True)
                        for _ in range(number_mut_parents)]
 
-        return (new_archive, non_dominated_front, ox_parents, mut_parents)
+        return new_archive, non_dominated_front, ox_parents, mut_parents
 
 
     def lessthan(self, index, jndex, distances, length_new_archive):
+        """A special less than operator. This method
+        wil be used to remove individuals from the archive
+        is it has grown too large. If this method returns
+        False the individual associated with index will
+        not be remove.
+
+        Parameters
+        ----------
+        index : int
+            The index of one individual in the archive
+        jndex : int
+            The index of another individual in the archive.
+            This index will be swept through the entire
+            population by spea2 method. When this method
+            returns True for every jndex, the individual
+            i will be removed from the archive.
+        distances : list
+            This is something computed in the process of
+            computing the density (in get_density).
+        length_new_archive : int
+            The current length of the new archive
+
+        Returns
+        -------
+        bool
+            True if individual i is closer to
+            its neighbors than individual j is
+            to its neighbors.
+        """
 
         for k in range(1, length_new_archive):
 
@@ -643,13 +714,46 @@ class GeneticProgramming:
 
 
     def get_strength(self, i, apop):
-        """apop is short for archive and population."""
+        """Compute the number of individuals
+        in apop that individual i dominates.
+
+        Parameters
+        ----------
+        i : Individual
+            The individual whose strength is
+            being calculated.
+        apop : list
+            This is the archive and population.
+
+        Returns
+        -------
+        strength : int
+            The strength of individual i. The
+            strength of an individual is the
+            number of individuals that i
+            dominates.
+        """
 
         return len([j for j in apop if i.dominates(j)])
 
 
     def get_raw_fitnesses(self, apop):
-        """apop is short for archive and population."""
+        """Compute the strength of
+        each individual in apop.
+
+        Parameters
+        ----------
+        apop : list
+            This is the archive and population.
+
+        Returns
+        -------
+        raw_fitnesses : np.array
+            For each individual (element in array),
+            this method returns the sum of strengths
+            of individual that dominate it. Thus,
+            the goal is a small raw fitness value.
+        """
 
         strengths = [self.get_strength(i, apop) for i in apop]
 
@@ -657,6 +761,30 @@ class GeneticProgramming:
 
 
     def get_desnsity(self, apop):
+        """Get the density of each individual
+        in apop. The density is a measure of
+        the crowdedness of individuals. It
+        is the inverse of the distance to
+        the k-th nearest neighbor.
+
+        Parameters
+        ----------
+        apop : list
+            This is the archive and population.
+
+        Returns
+        -------
+        distances : list
+            This is a two dimensional list that
+            gives the Euclidean distance between
+            all individuals in apop.
+        densities : list
+            A list of the density for each individual
+            in apop. The desnity is the inverse of the
+            distance to the k-th nearest neighbor with
+            a slight adjustment to avoid denominator of
+            zero.
+        """
 
         distances = [[np.linalg.norm(i.fitness-j.fitness) for j in apop] for i in apop]
 
@@ -665,20 +793,57 @@ class GeneticProgramming:
 
         sigmas = distances[:, int(k)]
 
-        return (distances, 1./(sigmas+2.))
+        return distances, 1./(sigmas+2.)
 
 
     def get_fitnesses_spea2(self, apop):
+        """A combination of raw fitness
+        and density.
+
+        Parameters
+        ----------
+        apop : list
+            This is the archive and population.
+
+        Returns
+        -------
+        distances : list
+            This is a two dimensional list that
+            gives the Euclidean distance between
+            all individuals in apop.
+        fitnesses : list
+            The fitness of each individual
+            in apop, which is the sum of
+            density and raw fitness.
+        """
 
         distances, D = self.get_desnsity(apop)
         R = self.get_raw_fitnesses(apop)
 
-        return (distances, R + D)
+        return distances, R + D
 
 
-    def tournament_selection(self, rng, archive, archive_fitnesses, k, replacement=True):
+    def tournament_selection(self, rng, archive, archive_fitnesses, replacement=True):
+        """Get the winner between 2 individuals based on a single fitness value.
 
-        index1, index2 = rng.choice(len(archive), size=k, replace=replacement)
+        Parameters
+        ----------
+        rng : random number generator
+            Example np.random.RandomState
+        archive : list
+            The individuals already in the archive
+        archive_fitnesses : list
+            The fitness of each individual
+            in apop, which is the sum of
+            density and raw fitness
+        replacement : bool (default=True)
+            If True, chooes the two individuals
+            with replacement. Thus, it would be
+            possible to select the same individual
+            twice.
+        """
+
+        index1, index2 = rng.choice(len(archive), size=2, replace=replacement)
 
         if archive_fitnesses[index1] < archive_fitnesses[index2]:
 
@@ -689,9 +854,35 @@ class GeneticProgramming:
             return archive[index2]
 
 
-    def tournament_selection_multiple_objective(self, rng, pop, k, replacement=True):
+    def tournament_selection_multiple_objective(self, rng, pop, replacement=True):
+        """Get the winner between 2 individuals based on a multiple objectives.
 
-        index1, index2 = rng.choice(len(pop), size=k, replace=replacement)
+        Parameters
+        ----------
+        rng : random number generator
+            Example np.random.RandomState
+        pop : list
+            The individuals already in the population
+        replacement : bool (default=True)
+            If True, chooes the two individuals
+            with replacement. Thus, it would be
+            possible to select the same individual
+            twice.
+
+        Returns
+        -------
+        index_winner : int or None
+            The index of the winner. None if the
+            two individuals are non-dominated.
+        index_loser : int or None
+            The index of the loser. None if the
+            two individuals are non-dominated.
+        ind_winner : Individual or None
+            The winner. None if the
+            two individuals are non-dominated.
+        """
+
+        index1, index2 = rng.choice(len(pop), size=2, replace=replacement)
 
         if pop[index1].dominates(pop[index2]):
 

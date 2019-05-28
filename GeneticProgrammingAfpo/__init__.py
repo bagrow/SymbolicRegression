@@ -4,7 +4,7 @@ from . import tree
 from .tree import Tree
 
 from . import individual
-from .individual import Individual
+from .Individual import Individual
 
 from . import GeneticProgramming
 from .GeneticProgramming import GeneticProgramming
