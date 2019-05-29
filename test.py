@@ -84,6 +84,42 @@ class TestTree(unittest.TestCase):
         self.assertEqual(subtree, ['x1'])
 
 
+    def test_convert_to_standard_10(self):
+        """Test if this works for x_n where
+        n >= 10."""
+
+        tree = GP.Tree('(x143)', num_vars=200)
+        standard = tree.convert_lisp_to_standard(None)
+        self.assertEqual(standard, 'x[143]')
+
+    def test_convert_to_standard_10_more_nodes(self):
+        """Test if this works for x_n where
+        n >= 10 for a tree with more than one node."""
+
+        tree = GP.Tree('(* x143 c3)', num_vars=200, actual_lisp=True)
+        standard = tree.convert_lisp_to_standard({'*': 'Mult'})
+        self.assertEqual(standard, 'Mult(x[143],c[3])')
+
+    def test_convert_to_standard_exponents(self):
+        """Test if this works for x_n where
+        n >= 10 for a tree with more than one node."""
+
+        tree_list = ['*', ['x[0]**3'], [7]]
+        tree = GP.Tree(tree_list)
+        standard = tree.convert_lisp_to_standard({'*': 'Mult'})
+        self.assertEqual(standard, 'Mult(x[0]**3,7)')
+
+
+    def test_convert_to_standard_exponents_one_node(self):
+        """Test if this works for x_n where
+        n >= 10 for a tree with more than one node."""
+
+        tree_list = ['x[0]**2']
+        tree = GP.Tree(tree_list)
+        standard = tree.convert_lisp_to_standard({'*': 'Mult'})
+        self.assertEqual(standard, 'x[0]**2')
+
+
 def setup_individual():
 
     I = GP.Individual(np.random.RandomState(0),

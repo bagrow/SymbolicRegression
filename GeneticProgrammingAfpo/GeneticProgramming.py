@@ -67,8 +67,6 @@ class GeneticProgramming:
         self.num_vars = num_vars
         self.mutation_param = mutation_param
 
-        assert 0 < self.num_vars <= 10, 'Currently, cannot support more than 10 variables.'
-
         self.non_dominated_front = {}
 
         self.pop = self.generate_population_ramped_half_and_half(self.pop_size, init_max_depth)

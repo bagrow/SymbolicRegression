@@ -10,7 +10,7 @@ class Tree:
     """This class represents a tree as a list of lists.
     Each sublist specifies the child nodes of the current node."""
 
-    def __init__(self, tree, num_vars=1, rng=None, **params):
+    def __init__(self, tree, num_vars=1, rng=None, actual_lisp=False, **params):
         """Initialize tree
 
         Parameters
@@ -48,7 +48,7 @@ class Tree:
             self.tree = tree
 
         elif type(tree) == str:
-            self.from_string(tree)
+            self.from_string(tree, actual_lisp=actual_lisp)
 
         elif tree is None:
             self.tree = tree
@@ -227,13 +227,15 @@ class Tree:
                 # the 0*x avoids vectorization problems.
                 return 'c[' + lisp[2] + ']+0*' + var
 
-            elif lisp == 'x':
+            elif '**' in lisp:
 
-                return lisp
+                return lisp[1:-1]
 
-            elif lisp[1] == 'x' and lisp[2].isdigit() and len(lisp) == 4:
+            elif lisp[1] == 'x' and lisp[2].isdigit():
 
-                return 'x[' + lisp[2] + ']'
+                num = [lisp[i] for i, l in enumerate(lisp) if i >=2 and lisp[i].isdigit()]
+
+                return 'x[' + ''.join(num) + ']'
 
             else:
 
@@ -242,19 +244,23 @@ class Tree:
         for word in split_lisp:
 
             if word[0] == '[' and word[-1] == ']':
-
                 count = word.count(']')
 
                 if word[1] == 'c' and word[-count - 1].isdigit():
-
                     standard += 'c[' + word[-count - 1] + ']'
 
-                elif word[1] == 'x' and word[-count - 1].isdigit() and len(word) == 3 + count:
+                elif '**' in word:
 
-                    standard += 'x[' + word[-count - 1] + ']'
+                    count -= 1  # because there is an extra ]
+                    standard += word[1:-count]
+
+                elif word[1] == 'x' and word[-count - 1].isdigit():
+
+                    num = [word[i] for i, l in enumerate(word) if i >=2 and word[i].isdigit()]
+
+                    standard += 'x[' + ''.join(num) + ']'
 
                 else:
-
                     standard += word[1:-count]
 
                 count -= 1
@@ -390,34 +396,49 @@ class Tree:
                 sbracket_expression = ''.join(['\'-\'' if i in minus_index else c for i, c in enumerate(sbracket_expression)])
 
         if actual_lisp:
-            prefix = '[\''
-            suffix = '\']'
 
             # find constants that give actual number
             string_list = []
 
             for word in sbracket_expression.split(' '):
 
+                no_brackets = word.replace('[', '').replace(']', '')
+                comma = False
+
+                if ',' in word:
+                    no_brackets = no_brackets.replace(',', '')
+                    comma = True
+
                 try:
-                    float(word.replace('[', '').replace(']', ''))
+                    if len(no_brackets) == 1:
+                        float(no_brackets)
+
+                    else:
+                        float(no_brackets[1:])
 
                 except ValueError:
                     string_list.append(word)
 
                 else:
-                    string_list.append('[' + word + ']')
+
+                    if comma:
+                        to_append = '[' + word[:-1] + '],'
+
+                    else:
+                        to_append = '[' + word + ']'
+
+                    string_list.append(to_append)
 
 
             sbracket_expression = ' '.join(string_list)
 
-        else:
-            prefix = suffix = '\''
+        prefix = suffix = '\''
 
-        for var in range(self.num_vars):
-            sbracket_expression = sbracket_expression.replace('x'+str(var), prefix + 'x'+str(var) + suffix)
+        for var_num in range(self.num_vars):
+            sbracket_expression = sbracket_expression.replace('x'+str(var_num)+']', prefix + 'x'+str(var_num) + suffix+']')
 
-        for var in range(10):
-            sbracket_expression = sbracket_expression.replace('c'+str(var), prefix + 'c'+str(var) + suffix)
+        for const_num in range(10):
+            sbracket_expression = sbracket_expression.replace('c'+str(const_num)+']', prefix + 'c'+str(const_num) + suffix+']')
 
         self.tree = eval(sbracket_expression)
 
