@@ -5,6 +5,8 @@ from GeneticProgrammingAfpo.consts import *
 from GeneticProgrammingAfpo.protected_functions import *
 
 import numpy as np
+import pandas as pd
+from interval import interval
 
 import os
 import argparse
@@ -51,40 +53,63 @@ else:
     run_list = list(map(int, args.redos.split(',')))
     print(run_list)
 
-num_vars = 1 if key not in number_of_input_variables else number_of_input_variables[key]
-print('num_vars', num_vars)
-
 noise_std = 0.1
 
 # --------------------------------------------------------- #
 #                      END PARAMETERS
 # --------------------------------------------------------- #
 
-# always use the same seed for each run in exp
-test_data = ds.get_datasets(rng=np.random.RandomState(exp),
-                            f=function_dict[key]['f'],
-                            A=function_dict[key]['a'],
-                            B=function_dict[key]['b'],
-                            noise_percent=None,
-                            noise_std=noise_std,
-                            data_size=int(100000 / num_vars))[0]
-
 # initialize and run gp
 primitive_set = ['+', '*', '-', '%']
 terminal_set = ['#x', '#f']
 
 
-def run_single(rng, pop_size, primitive_set, terminal_set, test_data,
-               prob_mutate, prob_xover, num_vars, max_depth, mutation_param,
+def run_single(rng, pop_size, primitive_set, terminal_set,
+               prob_mutate, prob_xover, max_depth, mutation_param,
                rep, output_path, output_file, **params):
 
-    dataset = ds.get_datasets(rng=np.random.RandomState(rep),
-                              f=function_dict[key]['f'],
-                              A=function_dict[key]['a'],
-                              B=function_dict[key]['b'],
-                              noise_percent=None,
-                              noise_std=noise_std,
-                              data_size=function_dict[key]['size'])
+    # if target function
+    if 'f' in function_dict[key]:
+        dataset = ds.get_datasets(rng=np.random.RandomState(rep),
+                                  f=function_dict[key]['f'],
+                                  A=function_dict[key]['a'],
+                                  B=function_dict[key]['b'],
+                                  noise_percent=None,
+                                  noise_std=noise_std,
+                                  data_size=function_dict[key]['size'])
+
+        num_vars = len(dataset[0][0])-1
+        print('num_vars', num_vars)
+
+        # always use the same seed for each run in exp
+        test_data = ds.get_datasets(rng=np.random.RandomState(exp),
+                                    f=function_dict[key]['f'],
+                                    A=function_dict[key]['a'],
+                                    B=function_dict[key]['b'],
+                                    noise_percent=None,
+                                    noise_std=noise_std,
+                                    data_size=int(100000 / num_vars))[0]
+
+    # if dataset
+    elif 'path' in function_dict[key]:
+        path = os.path.join(os.environ['DATASET_PATH'],
+                            function_dict[key]['path'], 'data.csv')
+
+        data = pd.read_csv(path).iloc[:, :].values
+
+        dataset, test_data = ds.split_data(np.random.RandomState(rep), data, (1, 1, 5))
+        print(dataset)
+
+        left_endpoints = [np.min(x) for x in dataset[:, 1:].T]
+        right_endpoints = [np.max(x) for x in dataset[:, 1:].T]
+        input_endpoints = np.vstack((left_endpoints, right_endpoints)).T
+        params['interval'] = [interval([a, b]) for a, b in input_endpoints]
+        print(params['interval'])
+
+        num_vars = len(dataset[0][0])-1
+        print('num_vars', num_vars)
+
+
 
     if params['size']:
         gp = GeneticProgramming(rng=rng,
@@ -138,8 +163,8 @@ start = time.time()
 
 run_single(rng=np.random.RandomState(run_list[run_index] + exp), pop_size=population_size,
            primitive_set=primitive_set,
-           terminal_set=terminal_set, test_data=test_data, prob_mutate=1.,
-           prob_xover=0., num_vars=num_vars, max_depth=max_depth,
+           terminal_set=terminal_set, prob_mutate=1.,
+           prob_xover=0., max_depth=max_depth,
            mutation_param=mutation_param, rep=run_list[run_index],
            output_path=os.path.join(os.environ['GP_DATA'], 'AFPO/experiments/' + str(exp) + '/' + key + '/'+last_folder),
            output_file='fitness_data_rep' + str(run_list[run_index]) + '.csv', **params)

@@ -3,7 +3,7 @@ from GeneticProgrammingAfpo.protected_functions import *
 import numpy as np
 
 population_size = 100
-max_generations = 398
+max_generations = 100
 max_front_size = int(np.sqrt(population_size))
 max_depth = 6
 
@@ -140,7 +140,38 @@ function_dict = {'Koza-1': {'f': lambda x: x**4 + x**3 + x**2 + x,
                               'type': 'urand',
                               'a': -1,
                               'b': 1,
-                              'size': 30}
+                              'size': 30},
+
+                 'Paige-1': {'f': lambda x: 1/(1+x[0]**(-4)) + 1/(1+x[1]**(-4)),
+                             'type': 'urand',
+                             'a': [-5]*2,
+                             'b': [5]*2,
+                             'size': 30},
+
+                 'fr_test-1': {'f': lambda x: np.sin(pdivide(x[0], x[1], value=0.)),
+                               'type': 'urand',
+                               'a': [-1]*2,
+                               'b': [1]*2,
+                               'size': 30},
+
+                 # ------------------------------------------------------------ #
+                 #                         Datasets
+                 # ------------------------------------------------------------ #
+
+                 # Dataset must have a path to the dataset (excluding the file).
+                 # This path begins with the location described by the environmental
+                 # variable DATASET_PATH.
+                 # The file must be called data.csv and the data must be formatted
+                 # so that the output data (values to be predicted) are in the zero-th
+                 # column the first input variable is in the first column ...
+
+                 'combined_cycle_power_plant': {'path': 'uci_datasets/combined_cycle_power_plant_data_set'},
+
+                 'wine': {'path': 'uci_datasets/wine'},
+
+                 'airfoil_self_noise': {'path': 'uci_datasets/airfoil_self_noise_dataset'},
+
+                 'auto_mpg': {'path': 'uci_datasets/auto_mpg_dataset'},
                  }
 
 # Dictionary explaining how many children (inputs)
@@ -215,10 +246,3 @@ simplification_rules = {'p/': (('&', '&', '1'), ('&', '(0)', '1'), ('(0)', '&', 
                         'plog': (('(1)', '0'),),
                         'sin': (('(0)', '0'),),
                         'cos': (('(0)', '1'),)}
-
-# for functions with more than one input variable
-# could get this info from length of function_info[1]['a']
-# (or function_info[1]['b'])
-number_of_input_variables = {'RatPol3D': 3,
-                             'UBall5D': 5,
-                             'Ripple': 2}   # for now everything else is 1

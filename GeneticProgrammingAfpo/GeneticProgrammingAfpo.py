@@ -134,7 +134,7 @@ class GeneticProgrammingAfpo(GeneticProgramming):
             while i_loser is None:
 
                 i_winner, i_loser, winner = self.tournament_selection_multiple_objective(self.rng, self.pop,
-                                                                                         k=2, replacement=False)
+                                                                                         replacement=False)
 
                 if num_iterations > 10e6:
                     print('Pareto front is getting too big. Stopping.')
