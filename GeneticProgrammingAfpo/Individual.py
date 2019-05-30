@@ -181,7 +181,7 @@ class Individual(Tree):
                     tree.append(primitive)
 
                     # give child nodes a place to exist
-                    for i in range(required_children_for_function[primitive]):
+                    for i in range(required_children[primitive]):
 
                         tree.append([])
                         current_indices.append([i+1])
@@ -212,7 +212,7 @@ class Individual(Tree):
                         subtree.append(primitive)
 
                         # append place for child nodes
-                        for i in range(required_children_for_function[primitive]):
+                        for i in range(required_children[primitive]):
 
                             subtree.append([])
 
@@ -277,7 +277,7 @@ class Individual(Tree):
 
                     try:
 
-                        for i in range(required_children_for_function[primitive]):
+                        for i in range(required_children[primitive]):
 
                             tree.append([])
                             current_indices.append([i+1])
@@ -315,7 +315,7 @@ class Individual(Tree):
                         try:
 
                             # append place for child nodes
-                            for i in range(required_children_for_function[primitive]):
+                            for i in range(required_children[primitive]):
 
                                 subtree.append([])
                                 new_current_indices = new_current_indices + [index_list + [i + 1]]
@@ -404,7 +404,7 @@ class Individual(Tree):
             s = 1   # size so far
             missing_nodes = []
 
-            for i in range(required_children_for_function[self.tree[0]]):
+            for i in range(required_children[self.tree[0]]):
                 missing_nodes.append(((i,), d))
                 self.tree.append([None])    # put space for children
 
@@ -427,7 +427,7 @@ class Individual(Tree):
 
                     # get locations of children of subtree
                     # add these to missing_nodes
-                    for i in range(required_children_for_function[subtree[0]]):
+                    for i in range(required_children[subtree[0]]):
                         missing_nodes.append(((*loc, i), d+1))
                         subtree.append([None])
 
@@ -726,7 +726,27 @@ class Individual(Tree):
         y_data = data[0, :, 0]
         y_data_val = data[1, :, 0]
 
-        f_string = self.convert_lisp_to_standard_for_function_creation()
+        if self.params['IA']:
+
+            # simplify to avoid false intervals
+            ind = copy.deepcopy(self)
+
+            ind.simplify()
+
+            ind.place_exponents()
+
+            f_string = ind.convert_lisp_to_standard_for_function_creation()
+
+            ind2 = copy.deepcopy(ind)
+
+            ind2.replace(old='p/', new='/')
+            ind2.replace(old='%', new='/')
+
+            f_string_for_intervals = ind2.convert_lisp_to_standard_for_interval_arithmetic()
+
+        else:
+
+            f_string = self.convert_lisp_to_standard_for_function_creation()
 
         if '#c' in self.T:
 
@@ -774,6 +794,30 @@ class Individual(Tree):
 
             self.fitness[0] = error(x_data, y_data)
             self.validation_fitness = error(x_data_val, y_data_val)
+
+        if self.params['IA']:
+
+            are_consts = 'c[' in f_string_for_intervals
+            f = get_function(f_string_for_intervals, const=are_consts)
+
+            # use IA to check if solution is undefined on data interval
+            try:
+                if are_consts:
+
+                    output = f(self.c, self.params['interval'])
+
+                else:
+
+                    output = f(self.params['interval'])
+            except ZeroDivisionError:
+                print('ZeroDivisionError', f_string_for_intervals)
+                exit()
+
+            # if true, set error to inf and age to inf (essentially delete individual)
+            if inf in output or -inf in output:
+
+                self.fitness[0] = float('inf')
+                self.fitness[1] = float('inf')
 
 
     def evaluate_test_points(self, data):

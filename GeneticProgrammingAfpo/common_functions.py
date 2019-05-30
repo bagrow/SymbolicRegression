@@ -2,6 +2,7 @@
 # the lambda strings (which contain np functions) are eval-ed here.
 from .protected_functions import *
 import numpy as np
+import operator
 
 import copy
 
