@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="GeneticProgrammingAfpo",
-    version="0.0.1",
+    version="0.0.2",
     author="Ryan Grindle",
     author_email="ryan.grindle@uvm.edu",
     description="Implementation of Genetic Programming.",

@@ -441,23 +441,4 @@ def split_data(rng, data, ratio, with_replacement=False):
 
         remaining_indices = [i for i in range(len(data)) if i not in indices]
 
-    # left_endpoints = [np.min(x) for x in dataset[:, 1:].T]
-    # right_endpoints = [np.max(x) for x in dataset[:, 1:].T]
-    # input_endpoints = np.vstack((left_endpoints, right_endpoints)).T
-    # params['interval'] = [interval([a, b]) for a, b in input_endpoints]
-    # print(params['interval'])
-
-    # dataset = np.array([train_data,
-    #                     val_data])
-
     return np.array(dataset[:2]), np.array(dataset[2])
-
-
-if __name__ == '__main__':
-
-    data = read_data(os.path.join(os.environ['DATASET_PATH'], 'uci_datasets/wine/data.csv'), one_file=True)
-    print(data)
-    print(data.shape)
-
-    dataset = split_data(np.random.RandomState(0), data, (1, 2))
-    print(dataset)

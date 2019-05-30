@@ -176,39 +176,28 @@ function_dict = {'Koza-1': {'f': lambda x: x**4 + x**3 + x**2 + x,
 
 # Dictionary explaining how many children (inputs)
 # are needed for each function.
-required_children_for_function = {'*': 2,
-                                  '+': 2,
-                                  '-': 2,
-                                  '/': 2,
-                                  'p/': 2,
-                                  '%': 2,
-                                  'AQ': 2,
-                                  'AQs': 2,
-                                  'CD': 2,
-                                  'CDs': 2,
-                                  'pfunc1': 2,
-                                  'pfunc2': 2,
-                                  'abs': 1,
-                                  'exp': 1,
-                                  'sin': 1,
-                                  'cos': 1,
-                                  'psqrt': 1,
-                                  'plog': 1,
-                                  'unary_minus': 1}
+required_children = {'*': 2,
+                     '+': 2,
+                     '-': 2,
+                     '/': 2,
+                     'p/': 2,
+                     '%': 2,
+                     'AQ': 2,
+                     'abs': 1,
+                     'exp': 1,
+                     'sin': 1,
+                     'cos': 1,
+                     'psqrt': 1,
+                     'plog': 1,
+                     'parccos': 1,
+                     'unary_minus': 1}
 
-functions_by_input = [[key for key, value in required_children_for_function.items() if value == i] for i in range(1, 3)]
+functions_by_input = [[key for key, value in required_children.items() if value == i] for i in range(1, 3)]
 
-# Make a special standard output function
 # and use this translation for function creation.
 math_translate = {'p/': 'pdivide',
                   '%': 'pdivide',
-                  '^': 'np.power',
                   'AQ': 'AQ',
-                  'AQs': 'AQs',
-                  'CD': 'CD',
-                  'CDs': 'CDs',
-                  'pfunc1': 'pfunc1',
-                  'pfunc2': 'pfunc2',
                   'psqrt': 'psqrt',
                   '+': 'np.add',
                   '-': 'np.subtract',
@@ -217,12 +206,13 @@ math_translate = {'p/': 'pdivide',
                   'sin': 'np.sin',
                   'cos': 'np.cos',
                   'exp': 'np.exp',
+                  'parccos': 'parccos',
+                  'iparcos': 'iparcos',
                   'unary_minus': 'unary_minus'}
 
 # This is another translation for use with pyinterval.
-math_translate_interval_arithmetic = {'p/': 'operator.truediv',
-                                      'CDs': 'CDs_interval',
-                                      # 'psqrt': 'psqrt',
+math_translate_interval_arithmetic = {'p/': 'operator.truediv',  # fake pd
+                                      '%': 'operator.truediv',  # fake pd
                                       '+': 'interval.__add__',
                                       '-': 'interval.__sub__',
                                       '*': 'interval.__mul__',
@@ -230,7 +220,9 @@ math_translate_interval_arithmetic = {'p/': 'operator.truediv',
                                       'sin': 'imath.sin',
                                       'cos': 'imath.cos',
                                       'parccos': 'iparccos',
-                                      'exp': 'imath.exp'}
+                                      'exp': 'imath.exp',
+                                      # convert all constants to intervals
+                                      '#f': lambda x: 'interval('+x+')'}
 
 # rules for simplification for key: (a, b, c) where key is the function, a, b are the children and c is the value of the node
 # & is used to prepresent anything (if two are used then the anythings must be equal.)
@@ -246,3 +238,35 @@ simplification_rules = {'p/': (('&', '&', '1'), ('&', '(0)', '1'), ('(0)', '&', 
                         'plog': (('(1)', '0'),),
                         'sin': (('(0)', '0'),),
                         'cos': (('(0)', '1'),)}
+
+# Below here I don't really want this in this file.
+# I need a way to keep this with primitive_set_transition
+# stuff but allow this version of GP to use it.
+
+# Dictionary explaining how many children (inputs)
+# are needed for each function.
+required_children['AQs'] = 2
+required_children['CD'] = 2
+required_children['FD'] = 2
+required_children['TD'] = 2
+required_children['CDs'] = 2
+required_children['FDs'] = 2
+required_children['TDs'] = 2
+required_children['pfunc1'] = 2
+required_children['pfunc2'] = 2
+
+functions_by_input = [[key for key, value in required_children.items() if value == i] for i in range(1, 3)]
+
+# and use this translation for function creation.
+math_translate['AQs'] = 'AQs'
+math_translate['CD'] = 'CD'
+math_translate['FD'] = 'FD'
+math_translate['TD'] = 'TD'
+math_translate['CDs'] = 'CDs'
+math_translate['FDs'] = 'FDs'
+math_translate['TDs'] = 'TDs'
+math_translate['pfunc1'] = 'pfunc1'
+math_translate['pfunc2'] = 'pfunc2'
+
+# This is another translation for use with pyinterval.
+math_translate_interval_arithmetic['CDs'] = 'CDs_interval'

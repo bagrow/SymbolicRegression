@@ -109,8 +109,6 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
         num_vars = len(dataset[0][0])-1
         print('num_vars', num_vars)
 
-
-
     if params['size']:
         gp = GeneticProgramming(rng=rng,
                                 pop_size=pop_size,
