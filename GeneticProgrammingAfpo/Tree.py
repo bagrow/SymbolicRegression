@@ -193,12 +193,178 @@ class Tree:
         return lisp
 
 
-    def convert_lisp_to_standard(self, convertion_dict):
+    def _convert_lisp_to_standard_only_element(self, lisp, convertion_dict):
+        """A portion of convert_lisp_to_standard, which deals
+        with the terminals only.
+
+        Parameters
+        ----------
+        lisp : str
+            The entire lisp, which is expected to be a single element.
+            The is the altered lisp, so, for example lisp could be '(x0)'
+        convertion_dict : dict
+            Same as in convert_lisp_to_standard
+
+        Returns
+        -------
+        standard : str
+            The string lisp converted to standard, potentially
+            containing +0*x[0] on the end to allow the string
+            to be vectorized (once it is converted into a
+            function.)
+        """
+
+        var = 'x[0]'
+
+        # if constant to be computed
+        if lisp[1] == 'c' and lisp[2].isdigit():
+
+            # the 0*x avoids vectorization problems.
+            return 'c[' + lisp[2] + ']+0*' + var
+
+        # if exponents are involved
+        # this is used with interval arithmetic
+        elif '**' in lisp:
+
+            # drop the '[' and ']'
+            return lisp[1:-1]
+
+        # if variable
+        elif lisp[1] == 'x' and lisp[2].isdigit():
+
+            # get the variable number, which could be any length
+            num = [lisp[i] for i, l in enumerate(lisp) if i >=2 and lisp[i].isdigit()]
+
+            return 'x[' + ''.join(num) + ']'
+
+        # if ephemeral constant
+        else:
+
+            # drop the '[' and ']' and convert if necessary
+            # again, the +0*x[0] allows for vectorization
+            return convertion_dict['#f'](lisp[1:-1]) + '+0*' + var
+
+
+    def _convert_lisp_to_standard_terminal(self, word, stack, convertion_dict):
+        """A portion of convert_lisp_to_standard, which deals
+        with the terminals only.
+
+        Parameters
+        ----------
+        word : str
+            The terminal, possibly with extra bits. For example,
+            word could be '[x0]'
+        stack : list
+            The stack of primitives encountered in the list so far.
+        convertion_dict : dict
+            Same as in convert_lisp_to_standard
+
+        Returns
+        -------
+        standard : str
+            The string word converted to standard, potentially
+            containing some ) and/or a single ,
+        """
+
+        count = word.count(']')
+
+        # if constant to be computed
+        if word[1] == 'c' and word[-count - 1].isdigit():
+            standard = 'c[' + word[-count - 1] + ']'
+
+        # if exponents are involved
+        # this is used with interval arithmetic
+        elif '**' in word:
+
+            count -= 1  # because there is an extra ]
+            standard = word[1:-count]
+
+        # if variable
+        elif word[1] == 'x' and word[-count - 1].isdigit():
+
+            num = [word[i] for i, l in enumerate(word) if i >=2 and word[i].isdigit()]
+
+            standard = 'x[' + ''.join(num) + ']'
+
+        # if ephemeral constant
+        else:
+            standard = convertion_dict['#f'](word[1:-count])
+
+        # adjust count because we have assumed that
+        # word[0], word[1] = '[', ']'
+        count -= 1
+
+        # The remaining count is the number of primitive
+        # that we have given all their children, so remove
+        # them from the stack ...
+        for _ in range(count):
+            stack.pop()
+
+        # and add on that many ending parethesis
+        standard += ")" * count
+
+        # if there is more to do, add a comma
+        if len(stack) > 1:
+            standard += ','
+
+        return standard
+
+
+    def _convert_lisp_to_standard_primitive(self, word, stack, convertion_dict):
+        """A portion of convert_lisp_to_standard, which deals
+        with the terminals only.
+
+        Parameters
+        ----------
+        word : str
+            The terminal, possibly with extra bits. For example,
+            word could be '[*'
+        stack : list
+            The stack of primitives encountered in the list so far.
+        convertion_dict : dict
+            Same as in convert_lisp_to_standard
+
+        Returns
+        -------
+        standard : str
+            The string word converted to standard, potentially
+            containing some ) and/or a single ,
+        """
+
+        if word[1:] in convertion_dict and word[1:] in required_children:
+
+            stack.append(convertion_dict[word[1:]])
+            standard = stack[-1] + '('
+
+        else:
+
+            print('ERROR in Individual.convert_lisp_to_standard: '
+                  'bad function ', word[1:])
+            exit()
+
+        return standard
+
+
+    def convert_lisp_to_standard(self, convertion_dict=None):
         """General versions of this function where
         conversion is specified by a dictionary.
         This function also forces input variables
         to be involved in the expression so that
         vectorization can be achieved (using eval).
+
+        Parameters
+        ----------
+        convertion_dict : dict
+            A dictionary explaining the convertion from
+            keys to values. Some of the names in self.P
+            (the primitive set) are short hand, so the
+            convertion_dict can be used to make them long
+            again. The key '#f' refers to ephemeral constants.
+            By default the constansts are unchanged. One example
+            of this usage might be to convert all the functions
+            to interval (as done for interval arithmetic). To do,
+            this one would set
+            convertion_dict['#f'] = lambda x: 'interval('+x+')'
 
         Examples
         --------
@@ -209,106 +375,38 @@ class Tree:
         Apple(3,1)+0*x[0]
         """
 
+        if convertion_dict is None:
+            convertion_dict = {'#f': lambda x: x}
+
+        elif '#f' not in convertion_dict:
+            convertion_dict['#f'] = lambda x: x
+
         lisp = str(self.tree).replace(',', '').replace('\'', '')
 
         stack = ['']
-        standard = ""
+        standard = ''
 
         split_lisp = lisp.split()
 
-        # Check if single node function to avoid added a comma at the end of expr
+        # Check if single node function to avoid added comma at the end of expr
         if len(split_lisp) == 1:
-
-            # var = 'x' if self.num_vars == 1 else 'x[0]'
-            var = 'x[0]'
-
-            if lisp[1] == 'c' and lisp[2].isdigit():
-
-                # the 0*x avoids vectorization problems.
-                return 'c[' + lisp[2] + ']+0*' + var
-
-            elif '**' in lisp:
-
-                return lisp[1:-1]
-
-            elif lisp[1] == 'x' and lisp[2].isdigit():
-
-                num = [lisp[i] for i, l in enumerate(lisp) if i >=2 and lisp[i].isdigit()]
-
-                return 'x[' + ''.join(num) + ']'
-
-            else:
-
-                return lisp + '+0*' + var
+            return self._convert_lisp_to_standard_only_element(lisp, convertion_dict)
 
         for word in split_lisp:
 
             if word[0] == '[' and word[-1] == ']':
-                count = word.count(']')
-
-                if word[1] == 'c' and word[-count - 1].isdigit():
-                    standard += 'c[' + word[-count - 1] + ']'
-
-                elif '**' in word:
-
-                    count -= 1  # because there is an extra ]
-                    standard += word[1:-count]
-
-                elif word[1] == 'x' and word[-count - 1].isdigit():
-
-                    num = [word[i] for i, l in enumerate(word) if i >=2 and word[i].isdigit()]
-
-                    standard += 'x[' + ''.join(num) + ']'
-
-                else:
-                    standard += word[1:-count]
-
-                count -= 1
-
-                for _ in range(count):
-                    stack.pop()
-
-                standard += ")" * count
-
-                if len(stack) > 1:
-                    standard += ','
+                standard += self._convert_lisp_to_standard_terminal(word,
+                                                                    stack,
+                                                                    convertion_dict)
 
             elif word[0] == '[':
-
-                if word[1:] in convertion_dict and word[1:] in required_children_for_function:
-
-                    stack.append(convertion_dict[word[1:]])
-                    standard += stack[-1] + '('
-
-                else:
-
-                    print('ERROR in convert_lisp_to_standard: '
-                          'bad function ', word[1:])
-                    exit()
-
-            elif word[-1] == ']':
-
-                count = word.count(']')
-
-                standard += word[:-count]
-
-                for _ in range(count):
-                    stack.pop()
-
-                standard += ')' * count
-
-                if len(stack) > 1:
-                    standard += ','
-
-            else:
-
-                standard = standard + word + ','
+                standard += self._convert_lisp_to_standard_primitive(word,
+                                                                     stack,
+                                                                     convertion_dict)
 
         if 'x' not in standard:  # assumes only x is for the variable
 
-            # var = 'x' if self.num_vars == 1 else 'x[0]'
             var = 'x[0]'
-
             standard += '+0*' + var  # to avoid vectorization issue
 
         return standard
@@ -335,16 +433,16 @@ class Tree:
         return standard
 
 
-    # def convert_lisp_to_standard_for_interval_arithmetic(self, lisp_str=None):
-    #     """Convert the string to a typical layout for an equation. The string is expected
-    #     to be a lisp expression. get_lisp_string() will be called if no string is passed.
+    def convert_lisp_to_standard_for_interval_arithmetic(self, lisp_str=None):
+        """Convert the string to a typical layout for an equation. The string is expected
+        to be a lisp expression. get_lisp_string() will be called if no string is passed.
 
-    #     If a function that calls numpy is in the tree, numpy will be used. For basic operation though,
-    #     standard python function will be used."""
+        If a function that calls numpy is in the tree, numpy will be used. For basic operation though,
+        standard python function will be used."""
 
-    #     standard = convert_lisp_to_standard(convertion_dict=interval_arithmetic)
+        standard = self.convert_lisp_to_standard(convertion_dict=math_translate_interval_arithmetic)
 
-    #     return standard
+        return standard
 
 # ------------------------------------------------------------ #
 #                      Build Trees
@@ -1150,7 +1248,7 @@ class Tree:
 
                 for rule in simplification_rules[subtree[0]]:
 
-                    if required_children_for_function[subtree[0]] == 2:
+                    if required_children[subtree[0]] == 2:
 
                         precount = copy.copy(count)
 
@@ -1159,7 +1257,7 @@ class Tree:
                         if count - precount > 0:
                             break
 
-                    elif required_children_for_function[subtree[0]] == 1:
+                    elif required_children[subtree[0]] == 1:
 
                         precount = copy.copy(count)
 
@@ -1171,7 +1269,7 @@ class Tree:
                     else:
 
                         print('simplification method not implemented for functions with',
-                              required_children_for_function[subtree[0]], 'children')
+                              required_children[subtree[0]], 'children')
 
             for child in subtree[1:]:
 

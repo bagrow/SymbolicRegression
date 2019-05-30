@@ -84,6 +84,15 @@ class TestTree(unittest.TestCase):
         self.assertEqual(subtree, ['x1'])
 
 
+    def test_convert_to_standard(self):
+        """Test if this works for a single
+        constant."""
+
+        tree = GP.Tree('(0)')
+        standard = tree.convert_lisp_to_standard(None)
+        self.assertEqual(standard, '0+0*x[0]')
+
+
     def test_convert_to_standard_10(self):
         """Test if this works for x_n where
         n >= 10."""
