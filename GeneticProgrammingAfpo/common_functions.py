@@ -5,6 +5,7 @@ import numpy as np
 import operator
 
 import copy
+import pickle
 
 # ------------------------------------------------------------ #
 #                   Function Creation
@@ -161,3 +162,67 @@ def get_folder(parameters):
     str_values = [str(int(parameters[key])) for key in parameters]
 
     return '_'.join(key+str_values[i] for i, key in enumerate(parameters))
+
+# ------------------------------------------------------------ #
+#            Save Constants and Protected Functions
+# ------------------------------------------------------------ #
+
+
+def pickle_this(data, save_loc):
+    """Pickle data in save location save_loc.
+
+    Parameters
+    ----------
+    data : tuple
+        A tuple of the data to save.
+    save_loc : str
+        The location where the pickled data
+        will be saved.
+    """
+
+    with open(save_loc, 'wb') as f:
+        pickle.dump(data, f)
+
+
+def unpickle_this(save_loc):
+    """Unpickle data from save location save_loc.
+
+    Parameters
+    ----------
+    save_loc : str
+        The location where the pickled data
+        will be saved.
+
+    Returns
+    -------
+    data : tuple
+        A tuple of the data that was unpickled.
+    """
+
+    with open(save_loc, 'rb') as f:
+        data = pickle.load(f)
+
+    return data
+
+
+if __name__ == '__main__':
+
+    import os
+
+    path = os.path.join(os.environ['GP_DATA'], 'pickled', 'pickle_test.pickle')
+
+    dir = os.path.dirname(path)
+
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+
+    # name = 'Ryan'
+    # number = 37
+
+    # data = (name, number)
+
+    # pickle_this(data, path)
+
+    data = unpickle_this(path)
+
+    print('data', data)

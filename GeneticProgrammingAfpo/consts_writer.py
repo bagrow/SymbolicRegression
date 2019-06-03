@@ -5,6 +5,7 @@ import numpy as np
 
 import os
 
+
 pickle_path = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpoConsts.pickle')
 pickle_path_backup = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpoConsts_backup.pickle')
 
@@ -36,6 +37,7 @@ def u_ball_5d(x): return 10. / (5. + (x[0]-3.)**2 + (x[1]-3.)**2 + (x[2]-3.)**2 
 def identity(x): return x
 def paige1(x): return 1/(1+x[0]**(-4)) + 1/(1+x[1]**(-4))
 def fr_test1(x): return np.sin(pdivide(x[0], x[1], value=0.))
+
 
 # Functions from mainly from
 # "Genetic Programming Needs Better Benchmarks" 2012.
@@ -273,20 +275,27 @@ simplification_rules = {'p/': (('&', '&', '1'), ('&', '(0)', '1'), ('(0)', '&', 
                         'sin': (('(0)', '0'),),
                         'cos': (('(0)', '1'),)}
 
-# change stuff from here if it exists
-if os.path.isfile(pickle_path):
 
-    (population_size,
-     max_generations,
-     function_dict,
-     required_children,
-     math_translate,
-     math_translate_interval_arithmetic,
-     simplification_rules) = cf.unpickle_this(pickle_path)
+if not os.path.exists(os.path.dirname(pickle_path_backup)):
+    os.makedirs(os.path.dirname(pickle_path_backup))
 
-# if pickled_path does not exist
-else:
+# pickle it here
+cf.pickle_this((population_size,
+                max_generations,
+                function_dict,
+                required_children,
+                math_translate,
+                math_translate_interval_arithmetic,
+                simplification_rules), pickle_path_backup)
 
-    print('Consts have not yet been pickled. Import consts_writer once to pickle them.')
+# In future versions this one will be edited
+# because this on will be loaded.
+cf.pickle_this((population_size,
+                max_generations,
+                function_dict,
+                required_children,
+                math_translate,
+                math_translate_interval_arithmetic,
+                simplification_rules), pickle_path)
 
 functions_by_input = [[key for key, value in required_children.items() if value == i] for i in range(1, 3)]

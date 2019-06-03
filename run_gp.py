@@ -1,7 +1,7 @@
+from GeneticProgrammingAfpo.consts_writer import *
 from GeneticProgrammingAfpo import GeneticProgrammingAfpo
 from GeneticProgrammingAfpo import GeneticProgramming
 import GeneticProgrammingAfpo.data_setup as ds
-from GeneticProgrammingAfpo.consts import *
 from GeneticProgrammingAfpo.protected_functions import *
 
 import numpy as np
@@ -11,6 +11,7 @@ from interval import interval
 import os
 import argparse
 import time
+import collections
 
 # --------------------------------------------------------- #
 #                      PARAMETERS
@@ -25,6 +26,10 @@ parser.add_argument('func', help='Specify the target function', type=str)
 parser.add_argument('exp', help='exp is the experiment number', type=int)
 
 parser.add_argument('-s', '--size', help='Use tree size as second objective',
+                    action='store_true')
+parser.add_argument('-uia', '--use_interval_arithmetic', help='Use interval arithmetic'
+                    'to check if solutions have'
+                    'undefined output',
                     action='store_true')
 parser.add_argument('-re', '--redos', help='Specific runs to do',
                     type=str, action='store', default='')
@@ -65,7 +70,7 @@ terminal_set = ['#x', '#f']
 
 
 def run_single(rng, pop_size, primitive_set, terminal_set,
-               prob_mutate, prob_xover, max_depth, mutation_param,
+               prob_mutate, prob_xover, mutation_param,
                rep, output_path, output_file, **params):
 
     # if target function
@@ -120,7 +125,6 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
                                 prob_mutate=prob_mutate,
                                 prob_xover=prob_xover,
                                 num_vars=num_vars,
-                                max_depth=max_depth,
                                 mutation_param=mutation_param,
                                 # parameters below
                                 **params)
@@ -135,7 +139,6 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
                                     prob_mutate=prob_mutate,
                                     prob_xover=prob_xover,
                                     num_vars=num_vars,
-                                    max_depth=max_depth,
                                     mutation_param=mutation_param,
                                     # parameters below
                                     **params)
@@ -147,10 +150,16 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
     return info
 
 
-params = {'size': args.size,
-          'save_pop_data': True if run_list[run_index] < 10 else False}
+params = collections.OrderedDict()
+params['size'] = args.size
+params['IA'] = args.use_interval_arithmetic
 
-last_folder = 'size/' if args.size else ''
+last_folder = cf.get_folder(params) + '/'
+
+params['count_asymptotes'] = False
+params['save_pop_data'] = False
+
+print('last_folder', last_folder)
 
 if len(run_list) <= run_index:
 
@@ -162,7 +171,7 @@ start = time.time()
 run_single(rng=np.random.RandomState(run_list[run_index] + exp), pop_size=population_size,
            primitive_set=primitive_set,
            terminal_set=terminal_set, prob_mutate=1.,
-           prob_xover=0., max_depth=max_depth,
+           prob_xover=0.,
            mutation_param=mutation_param, rep=run_list[run_index],
            output_path=os.path.join(os.environ['GP_DATA'], 'AFPO/experiments/' + str(exp) + '/' + key + '/'+last_folder),
            output_file='fitness_data_rep' + str(run_list[run_index]) + '.csv', **params)
