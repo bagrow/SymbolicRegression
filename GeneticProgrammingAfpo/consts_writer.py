@@ -39,6 +39,29 @@ def paige1(x): return 1/(1+x[0]**(-4)) + 1/(1+x[1]**(-4))
 def fr_test1(x): return np.sin(pdivide(x[0], x[1], value=0.))
 
 
+functions = {'koza1': koza1,
+             'koza2': koza2,
+             'koza3': koza3,
+             'nguyen1': nguyen1,
+             'nguyen3': nguyen3,
+             'nguyen4': nguyen4,
+             'nguyen5': nguyen5,
+             'nguyen6': nguyen6,
+             'nguyen7': nguyen7,
+             'nguyen8': nguyen8,
+             'keijzer1': keijzer1,
+             'keijzer2': keijzer2,
+             'keijzer4': keijzer4,
+             'scaled_sinc': scaled_sinc,
+             'automatic_french_curve': automatic_french_curve,
+             'chebyshev_polynomial': chebyshev_polynomial,
+             'ripple': ripple,
+             'rat_pol_3d': rat_pol_3d,
+             'u_ball_5d': u_ball_5d,
+             'identity': identity,
+             'paige1': paige1,
+             'fr_test1': fr_test1}
+
 # Functions from mainly from
 # "Genetic Programming Needs Better Benchmarks" 2012.
 function_dict = {'Koza-1': {'f': koza1,
@@ -282,6 +305,7 @@ if not os.path.exists(os.path.dirname(pickle_path_backup)):
 # pickle it here
 pickling.pickle_this((population_size,
                       max_generations,
+                      functions,
                       function_dict,
                       required_children,
                       math_translate,
@@ -292,6 +316,7 @@ pickling.pickle_this((population_size,
 # because this on will be loaded.
 pickling.pickle_this((population_size,
                       max_generations,
+                      functions,
                       function_dict,
                       required_children,
                       math_translate,

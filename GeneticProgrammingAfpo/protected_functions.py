@@ -19,4 +19,6 @@ if os.path.isfile(pickle_path):
 
 # if pickled_path does not exist
 else:
+
     print('protected functions have not yet been pickled. Import protected_functions_writer once to pickle them.')
+    exit()
