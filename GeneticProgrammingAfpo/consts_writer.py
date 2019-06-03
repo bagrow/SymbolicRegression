@@ -1,13 +1,13 @@
 from GeneticProgrammingAfpo.protected_functions import *
-import GeneticProgrammingAfpo.common_functions as cf
+import GeneticProgrammingAfpo.pickling as pickling
 
 import numpy as np
 
 import os
 
 
-pickle_path = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpoConsts.pickle')
-pickle_path_backup = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpoConsts_backup.pickle')
+pickle_path = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpo_consts.pickle')
+pickle_path_backup = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpo_consts_backup.pickle')
 
 population_size = 100
 max_generations = 100
@@ -280,22 +280,22 @@ if not os.path.exists(os.path.dirname(pickle_path_backup)):
     os.makedirs(os.path.dirname(pickle_path_backup))
 
 # pickle it here
-cf.pickle_this((population_size,
-                max_generations,
-                function_dict,
-                required_children,
-                math_translate,
-                math_translate_interval_arithmetic,
-                simplification_rules), pickle_path_backup)
+pickling.pickle_this((population_size,
+                      max_generations,
+                      function_dict,
+                      required_children,
+                      math_translate,
+                      math_translate_interval_arithmetic,
+                      simplification_rules), pickle_path_backup)
 
 # In future versions this one will be edited
 # because this on will be loaded.
-cf.pickle_this((population_size,
-                max_generations,
-                function_dict,
-                required_children,
-                math_translate,
-                math_translate_interval_arithmetic,
-                simplification_rules), pickle_path)
+pickling.pickle_this((population_size,
+                      max_generations,
+                      function_dict,
+                      required_children,
+                      math_translate,
+                      math_translate_interval_arithmetic,
+                      simplification_rules), pickle_path)
 
 functions_by_input = [[key for key, value in required_children.items() if value == i] for i in range(1, 3)]

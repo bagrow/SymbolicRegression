@@ -1,8 +1,9 @@
+from GeneticProgrammingAfpo.protected_functions_writer import *
 from GeneticProgrammingAfpo.consts_writer import *
 from GeneticProgrammingAfpo import GeneticProgrammingAfpo
 from GeneticProgrammingAfpo import GeneticProgramming
 import GeneticProgrammingAfpo.data_setup as ds
-from GeneticProgrammingAfpo.protected_functions import *
+import GeneticProgrammingAfpo.common_functions as cf
 
 import numpy as np
 import pandas as pd
