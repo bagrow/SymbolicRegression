@@ -747,7 +747,7 @@ class Individual(Tree):
         else:
 
             f_string = self.convert_lisp_to_standard_for_function_creation()
-
+            print(f_string)
         if '#c' in self.T:
 
             are_consts = 'c[' in f_string

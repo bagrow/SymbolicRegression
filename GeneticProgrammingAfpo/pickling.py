@@ -1,9 +1,8 @@
-import pickle
+import dill
 
 # ------------------------------------------------------------ #
 #            Save Constants and Protected Functions
 # ------------------------------------------------------------ #
-
 
 def pickle_this(data, save_loc):
     """Pickle data in save location save_loc.
@@ -18,7 +17,7 @@ def pickle_this(data, save_loc):
     """
 
     with open(save_loc, 'wb') as f:
-        pickle.dump(data, f)
+        dill.dump(data, f)
 
 
 def unpickle_this(save_loc):
@@ -35,8 +34,7 @@ def unpickle_this(save_loc):
     data : tuple
         A tuple of the data that was unpickled.
     """
-
     with open(save_loc, 'rb') as f:
-        data = pickle.load(f)
+        data = dill.load(f)
 
     return data

@@ -1,21 +1,10 @@
-import os
+print('in __init__')
 
-if os.path.isfile(os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpo_consts.pickle')):
+from . import protected_functions
+from .protected_functions import *
 
-    from . import protected_functions
-    from .protected_functions import *
-
-    from . import consts
-    from .consts import *
-
-else:
-
-    from . import protected_functions_writer
-    from .protected_functions_writer import *
-
-    from . import consts_writer
-    from .consts_writer import *
-
+from . import consts
+from .consts import *
 
 # Import Classes
 from . import Tree

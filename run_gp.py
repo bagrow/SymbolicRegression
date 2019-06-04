@@ -1,5 +1,5 @@
 from GeneticProgrammingAfpo.protected_functions_writer import *
-from GeneticProgrammingAfpo.consts_writer import *
+from GeneticProgrammingAfpo.consts import *
 from GeneticProgrammingAfpo import GeneticProgrammingAfpo
 from GeneticProgrammingAfpo import GeneticProgramming
 import GeneticProgrammingAfpo.data_setup as ds
@@ -14,6 +14,8 @@ import argparse
 import time
 import collections
 
+pickle_protected_functions()
+pickle_consts()
 # --------------------------------------------------------- #
 #                      PARAMETERS
 # --------------------------------------------------------- #
