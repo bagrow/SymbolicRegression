@@ -36,6 +36,10 @@ class GeneticProgrammingAfpo(GeneticProgramming):
         # Age
         ind.fitness[1] = ind.age
 
+        # Number of Nodes
+        if self.params['AFSPO']:
+            ind.fitness[2] = ind.get_tree_size()
+
 
     def size_fair_crossover(self, parents):
         """Crossover parents (list of 2 nodes) by selection the first
@@ -70,7 +74,7 @@ class GeneticProgrammingAfpo(GeneticProgramming):
             The number of individuals to generate through
             crossover.
         """
-
+        self.get_non_dominated_front()
         xover_parents = self.rng.choice(self.pop, size=(num_xover, 2))
         mut_parents = self.rng.choice(self.pop, size=num_mut)
 

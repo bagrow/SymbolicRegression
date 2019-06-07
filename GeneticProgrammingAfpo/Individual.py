@@ -69,7 +69,7 @@ class Individual(Tree):
                       **params)
 
         # Order is error, age
-        self.fitness = np.array([0., 0.])
+        self.fitness = np.zeros(3) if self.params['AFSPO'] else np.zeros(2)
 
         # fitness (that does not effect other fitness)
         # during symbolic regression
@@ -747,7 +747,7 @@ class Individual(Tree):
         else:
 
             f_string = self.convert_lisp_to_standard_for_function_creation()
-            print(f_string)
+
         if '#c' in self.T:
 
             are_consts = 'c[' in f_string
