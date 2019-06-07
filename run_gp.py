@@ -1,15 +1,10 @@
 # Overwrite (or create) the constants and protected functions
-import GeneticProgrammingAfpo.protected_functions_writer
-import GeneticProgrammingAfpo.consts_writer
+import protected_functions_writer
+import consts_writer
 
 # Read in the constants and protected functions
-import importlib
-importlib.reload(GeneticProgrammingAfpo.protected_functions)
-importlib.reload(GeneticProgrammingAfpo.consts)
 from GeneticProgrammingAfpo.protected_functions import *
 from GeneticProgrammingAfpo.consts import *
-print('max_generations', max_generations)
-print('GeneticProgrammingAfpo.consts.max_generations', GeneticProgrammingAfpo.consts.max_generations)
 
 # Now import like normal
 from GeneticProgrammingAfpo import GeneticProgrammingAfpo

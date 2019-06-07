@@ -1,4 +1,4 @@
-import GeneticProgrammingAfpo.pickling as pickling
+import pickling
 
 import numpy as np
 from interval import interval, inf
@@ -119,6 +119,7 @@ def iparccos(x):
         lower = np.arccos(x.sup)
 
     return (lower, higher),
+
 
 functions = [dill.source.getsource(pdivide),
              dill.source.getsource(pdivide_no_numpy),

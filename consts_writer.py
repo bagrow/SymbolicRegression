@@ -1,5 +1,5 @@
-from GeneticProgrammingAfpo.target_functions import *
-import GeneticProgrammingAfpo.pickling as pickling
+from target_functions import *
+import pickling
 
 import os
 

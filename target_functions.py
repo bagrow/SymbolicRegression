@@ -1,6 +1,20 @@
-from GeneticProgrammingAfpo.protected_functions import *
-
 import numpy as np
+
+def pdivide(x, y):
+    """Protected divide function. This functions returns 1 when a
+        denominator of 0 is input."""
+
+    ans = np.true_divide(x, y)
+
+    try:
+        ans[np.logical_or(y == 0, np.isnan(ans))] = 1.
+
+    except TypeError:
+
+        if y == 0 or np.isnan(ans):
+            ans = 1.
+
+    return ans
 
 def koza1(x): return x**4 + x**3 + x**2 + x
 def koza2(x): return x**5 - 2 * x**3 + x
@@ -11,8 +25,8 @@ def nguyen3(x): return x**5 + x**4 + x**3 + x**2 + x
 def nguyen4(x): return x**6 + x**5 + x**4 + x**3 + x**2 + x
 def nguyen5(x): return np.sin(x**2) * np.cos(x) - 1
 def nguyen6(x): return np.sin(x) + np.sin(x + x**2)
-def nguyen7(x): return plog(x + 1) + plog(x**2 + 1)
-def nguyen8(x): return psqrt(x)
+def nguyen7(x): return np.log(x + 1) + np.log(x**2 + 1)
+def nguyen8(x): return np.sqrt(x)
 
 def keijzer1(x): return 0.3 * x * np.sin(2 * np.pi * x)
 def keijzer2(x): return 0.3 * x * np.sin(2 * np.pi * x)
