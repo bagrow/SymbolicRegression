@@ -12,6 +12,9 @@ if os.path.exists(pickle_path):
 	from . import consts
 	from .consts import *
 
+	from . import common_functions
+	from .common_functions import *
+
 	# Import Classes
 	from . import Tree
 	from .Tree import Tree
@@ -24,7 +27,3 @@ if os.path.exists(pickle_path):
 
 	from . import GeneticProgrammingAfpo
 	from .GeneticProgrammingAfpo import GeneticProgrammingAfpo
-
-	# Import Functions/Global Variables
-	from .common_functions import *
-	from .data_setup import *
