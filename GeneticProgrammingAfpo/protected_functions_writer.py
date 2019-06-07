@@ -1,171 +1,141 @@
-# import GeneticProgrammingAfpo.pickling as pickling
+import GeneticProgrammingAfpo.pickling as pickling
 
-# import numpy as np
-# from interval import interval, inf
+import numpy as np
+from interval import interval, inf
 
-# import os
+import os
+import dill
 
-# # ------------------------------------------------------------ #
-# #                     Protected Function
-# # ------------------------------------------------------------ #
-# # These are functions that don't incude all read numbers in
-# # their domain, so they are extended so that they will not
-# # cause errors.
+pickle_path = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpo_protected_functions.dill')
+pickle_path_backup = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpo_protected_functions_backup.dill')
 
-# def pdivide(x, y):
-#     """Protected divide function. This functions returns 1 when a
-#         denominator of 0 is input."""
+# def pickle_protected_functions():
 
-#     ans = np.true_divide(x, y)
+print('Writing protected_functions from GeneticProgrammingAfpo')
 
-#     try:
-#         ans[np.logical_or(y == 0, np.isnan(ans))] = 1.
+# ------------------------------------------------------------ #
+#                     Protected Function
+# ------------------------------------------------------------ #
+# These are functions that don't incude all read numbers in
+# their domain, so they are extended so that they will not
+# cause errors.
 
-#     except TypeError:
+def pdivide(x, y):
+    """Protected divide function. This functions returns 1 when a
+        denominator of 0 is input."""
 
-#         if y == 0 or np.isnan(ans):
-#             ans = 1.
+    ans = np.true_divide(x, y)
 
-#     return ans
+    try:
+        ans[np.logical_or(y == 0, np.isnan(ans))] = 1.
 
+    except TypeError:
 
-# def pdivide_no_numpy(x, y):
+        if y == 0 or np.isnan(ans):
+            ans = 1.
 
-#     try:
-#         return x / y
-
-#     except ZeroDivisionError:
-#         return 1.
-
-
-# def psqrt(x):
-#     """Protected square root function. This function returns the square root of
-#     the absolute value of x."""
-
-#     return np.sqrt(np.abs(x))
+    return ans
 
 
-# def plog(x):
-#     """Protected natural log function."""
+def pdivide_no_numpy(x, y):
 
-#     return np.log(np.abs(x))
+    try:
+        return x / y
 
-
-# def parccos(x):
-#     """Protected arccos. Inside [-1,1], use normal arccos.
-#     For x > 1, use arcos(1) = 0. For, x < -1 use arccos(-1) = pi."""
-
-#     ans = np.arccos(x)
-
-#     try:
-#         ans[x > 1.] = 0.
-#     except TypeError:
-#         if x > 1.:
-#             ans = 0.
-
-#     try:
-#         ans[x < -1.] = np.pi
-#     except TypeError:
-#         if x < -1.:
-#             ans = np.pi
-
-#     return ans
+    except ZeroDivisionError:
+        return 1.
 
 
-# def AQ(x, y):
-#     """Analytic Quotient"""
+def psqrt(x):
+    """Protected square root function. This function returns the square root of
+    the absolute value of x."""
 
-#     return np.divide(x, np.sqrt(np.power(y, 2) + 1))
-
-
-# def unary_minus(x):
-#     """Effectively a negative sign"""
-
-#     return np.negative(x)
-
-# # ------------------------------------------------------------ #
-# #          Modified Function for Interval Arithmetic
-# # ------------------------------------------------------------ #
-
-# @interval.function
-# def iparccos(x):
-#     """This is protected inverse cosine. Inside [-1,1], use normal arccos.
-#     For x > 1, use arcos(1) = 0. For, x < -1 use arccos(-1) = pi."""
-
-#     if x.inf <= -1.0:
-#         higher = np.pi
-
-#     elif x.inf >= 1.0:
-#         return (0.0, 0.0),
-
-#     else:
-#         higher = np.arccos(x.inf)
-
-#     if x.sup >= 1.0:
-#         lower = 0.0
-
-#     elif x.sup <= -1.0:
-#         return (np.pi, np.pi),
-
-#     else:
-#         lower = np.arccos(x.sup)
-
-#     return (lower, higher),
+    return np.sqrt(np.abs(x))
 
 
-# def intersection(I1, I2):
+def plog(x):
+    """Protected natural log function."""
 
-#     I = interval()
-
-#     for a1, b1 in I1:
-
-#         for a2, b2 in I2:
-
-#             end_points = [a1, b1, a2, b2]
-#             indices = np.argsort(end_points)
-
-#             if np.all(indices[:2] == [0, 2]) or np.all(indices[:2] == [2, 0]):
-
-#                 I = I | interval([end_points[indices[1]], end_points[indices[2]]])
-
-#             elif end_points[indices[1]] == end_points[indices[2]]:
-
-#                 I = I | interval([end_points[indices[1]]])
-
-#     return I
+    return np.log(np.abs(x))
 
 
-# def CDs_interval(s, x, y):
+def parccos(x):
+    """Protected arccos. Inside [-1,1], use normal arccos.
+    For x > 1, use arcos(1) = 0. For, x < -1 use arccos(-1) = pi."""
 
-#     mid = lambda X, param=s: (2*param**2*X-X**3)/param**4
-#     PD = lambda X: pdivide_no_numpy(1., X)
+    ans = np.arccos(x)
 
-#     return interval(x)*mid(intersection(interval(y), interval([-s, s]))) | interval(x)*PD(intersection(interval(y), interval([-inf, -s]))) | interval(x)*PD(intersection(interval(y), interval([s, inf])))
+    try:
+        ans[x > 1.] = 0.
+    except TypeError:
+        if x > 1.:
+            ans = 0.
+
+    try:
+        ans[x < -1.] = np.pi
+    except TypeError:
+        if x < -1.:
+            ans = np.pi
+
+    return ans
 
 
-# if __name__ == '__main__':
+def AQ(x, y):
+    """Analytic Quotient"""
 
-#     pickle_path = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpo_protected_functions.pickle')
-#     pickle_path_backup = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpo_protected_functions_backup.pickle')
+    return np.divide(x, np.sqrt(np.power(y, 2) + 1))
 
-#     print('Writing protected_functions from GeneticProgrammingAfpo')
 
-#     functions = {'pdivide': pdivide,
-#                  'pdivide_no_numpy': pdivide_no_numpy,
-#                  'psqrt': psqrt,
-#                  'plog': plog,
-#                  'parccos': parccos,
-#                  'AQ': AQ,
-#                  'unary_minus': unary_minus,
-#                  'iparcos': iparccos}
+def unary_minus(x):
+    """Effectively a negative sign"""
 
-#     # Pickle them all
-#     if not os.path.exists(os.path.dirname(pickle_path_backup)):
-#         os.makedirs(os.path.dirname(pickle_path_backup))
+    return np.negative(x)
 
-#     # pickle it here
-#     pickling.pickle_this(functions, pickle_path_backup)
+# ------------------------------------------------------------ #
+#          Modified Function for Interval Arithmetic
+# ------------------------------------------------------------ #
 
-#     # In future versions this one will be edited
-#     # because this on will be loaded.
-#     pickling.pickle_this(functions, pickle_path)
+@interval.function
+def iparccos(x):
+    """This is protected inverse cosine. Inside [-1,1], use normal arccos.
+    For x > 1, use arcos(1) = 0. For, x < -1 use arccos(-1) = pi."""
+
+    if x.inf <= -1.0:
+        higher = np.pi
+
+    elif x.inf >= 1.0:
+        return (0.0, 0.0),
+
+    else:
+        higher = np.arccos(x.inf)
+
+    if x.sup >= 1.0:
+        lower = 0.0
+
+    elif x.sup <= -1.0:
+        return (np.pi, np.pi),
+
+    else:
+        lower = np.arccos(x.sup)
+
+    return (lower, higher),
+
+functions = [dill.source.getsource(pdivide),
+             dill.source.getsource(pdivide_no_numpy),
+             dill.source.getsource(psqrt),
+             dill.source.getsource(plog),
+             dill.source.getsource(parccos),
+             dill.source.getsource(AQ),
+             dill.source.getsource(unary_minus)]#,
+             # dill.source.getsource(iparccos)]
+
+# Pickle them all
+if not os.path.exists(os.path.dirname(pickle_path_backup)):
+    os.makedirs(os.path.dirname(pickle_path_backup))
+
+# pickle it here
+pickling.pickle_this(functions, pickle_path_backup)
+
+# In future versions this one will be edited
+# because this on will be loaded.
+pickling.pickle_this(functions, pickle_path)

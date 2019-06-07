@@ -1,24 +1,30 @@
+import os
+
 print('in __init__')
 
-from . import protected_functions
-from .protected_functions import *
+pickle_path = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProgrammingAfpo_consts.dill')
 
-from . import consts
-from .consts import *
+if os.path.exists(pickle_path):
 
-# Import Classes
-from . import Tree
-from .Tree import Tree
+	from . import protected_functions
+	from .protected_functions import *
 
-from . import Individual
-from .Individual import Individual
+	from . import consts
+	from .consts import *
 
-from . import GeneticProgramming
-from .GeneticProgramming import GeneticProgramming
+	# Import Classes
+	from . import Tree
+	from .Tree import Tree
 
-from . import GeneticProgrammingAfpo
-from .GeneticProgrammingAfpo import GeneticProgrammingAfpo
+	from . import Individual
+	from .Individual import Individual
 
-# Import Functions/Global Variables
-from .common_functions import *
-from .data_setup import *
+	from . import GeneticProgramming
+	from .GeneticProgramming import GeneticProgramming
+
+	from . import GeneticProgrammingAfpo
+	from .GeneticProgrammingAfpo import GeneticProgrammingAfpo
+
+	# Import Functions/Global Variables
+	from .common_functions import *
+	from .data_setup import *

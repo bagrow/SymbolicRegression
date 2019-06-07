@@ -1,5 +1,17 @@
-from GeneticProgrammingAfpo.protected_functions_writer import *
+# Overwrite (or create) the constants and protected functions
+import GeneticProgrammingAfpo.protected_functions_writer
+import GeneticProgrammingAfpo.consts_writer
+
+# Read in the constants and protected functions
+import importlib
+importlib.reload(GeneticProgrammingAfpo.protected_functions)
+importlib.reload(GeneticProgrammingAfpo.consts)
+from GeneticProgrammingAfpo.protected_functions import *
 from GeneticProgrammingAfpo.consts import *
+print('max_generations', max_generations)
+print('GeneticProgrammingAfpo.consts.max_generations', GeneticProgrammingAfpo.consts.max_generations)
+
+# Now import like normal
 from GeneticProgrammingAfpo import GeneticProgrammingAfpo
 from GeneticProgrammingAfpo import GeneticProgramming
 import GeneticProgrammingAfpo.data_setup as ds
@@ -14,8 +26,6 @@ import argparse
 import time
 import collections
 
-pickle_protected_functions()
-pickle_consts()
 # --------------------------------------------------------- #
 #                      PARAMETERS
 # --------------------------------------------------------- #
@@ -33,6 +43,8 @@ parser.add_argument('-s', '--size', help='Use tree size as second objective',
 parser.add_argument('-uia', '--use_interval_arithmetic', help='Use interval arithmetic'
                     'to check if solutions have'
                     'undefined output',
+                    action='store_true')
+parser.add_argument('-afspo', '--AFSPO', help='Use the number of nodes in tree as third objective',
                     action='store_true')
 parser.add_argument('-re', '--redos', help='Specific runs to do',
                     type=str, action='store', default='')
@@ -154,6 +166,7 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
 
 
 params = collections.OrderedDict()
+params['AFSPO'] = args.AFSPO
 params['size'] = args.size
 params['IA'] = args.use_interval_arithmetic
 

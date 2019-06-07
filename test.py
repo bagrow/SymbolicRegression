@@ -226,6 +226,31 @@ class TestIndividual(unittest.TestCase):
         self.assertTrue(not I1.dominates(I2) and not I2.dominates(I1))
 
 
+    def test_dominates_three_objectives(self):
+        """Test dominates with different individuals
+        that have three objectives."""
+
+        I1 = setup_individual()
+        I2 = setup_individual()
+
+        I1.fitness = np.array([.9, 4., 7.])
+        I2.fitness = np.array([1., 5., 7.])
+
+        self.assertTrue(I1.dominates(I2) and not I2.dominates(I1))
+
+    def test_dominates_three_objectives_non_dominate(self):
+        """Test dominates with different individuals
+        that have three objectives."""
+
+        I1 = setup_individual()
+        I2 = setup_individual()
+
+        I1.fitness = np.array([.9, 4., 7.])
+        I2.fitness = np.array([1., 5., 6.])
+
+        self.assertTrue(not I1.dominates(I2) and not I2.dominates(I1))
+
+
 if __name__ == '__main__':
 
     unittest.main()

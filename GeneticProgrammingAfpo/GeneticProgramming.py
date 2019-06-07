@@ -347,6 +347,9 @@ class GeneticProgramming:
 
             for j, ind2 in enumerate(self.pop):
 
+                if i == j:
+                    continue
+
                 # This should be the most common.
                 if ind2.dominates(ind):
                     break
