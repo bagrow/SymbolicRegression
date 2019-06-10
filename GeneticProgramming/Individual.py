@@ -509,6 +509,15 @@ class Individual(Tree):
         mutation_param : int
             Mutation parameter describing the max_depth of subtree
             to create on mutation (node_replacement).
+
+        Returns
+        -------
+        mut_list : list (of functions)
+            The list of possible mutation as functions to be
+            called.
+        mut_params : list (of tuples)
+            The list (in same order as mut_list) with the parameters
+            necessary to call the functions in mut_list
         """
 
         mut_list = [self.node_replacement]

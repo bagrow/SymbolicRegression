@@ -81,6 +81,8 @@ class GeneticProgramming:
         elif self.mutation_param == 9:
             self.mutation_param = self.rng.randint(4, 5)
 
+        self.save_pop_data = self.params['save_pop_data']
+
 
     def generate_population_ramped_half_and_half(self, size, init_max_depth):
         """Generate the population using the ramped half and half method.
@@ -481,6 +483,8 @@ class GeneticProgramming:
             Location to save the data generated. This data includes
             summaries of fintesses and other measurements as well as
             individuals.
+        output_file : str
+            The filename withtout the path.
         """
 
         print('output path', output_path)
@@ -495,6 +499,11 @@ class GeneticProgramming:
 
         print(info[-1])
 
+        if self.save_pop_data:
+
+            pop_data = []
+            pop_data.extend(self.get_pop_data(0))
+
         try:
             os.makedirs(output_path)
 
@@ -508,6 +517,13 @@ class GeneticProgramming:
                   'Minimum Depth', 'Average Depth', 'Median Depth', 'Maximum Depth',
                   'Minimum Validation Error', 'Average Validation Error', 'Median Validation Error',
                   'Maximum Validation Error']
+
+        if self.save_pop_data:
+
+            pop_data_header = ['Generation', 'Index', 'Root Mean Squared Error', 'Age', 'Equation']
+            df_pop = pd.DataFrame(pop_data)
+            df_pop.to_csv(output_path + 'pop_data_rep' + str(rep) + '.csv', header=pop_data_header, index=None)
+            info = []
 
         num_xover = int(self.prob_xover * population_size)
 
@@ -527,12 +543,37 @@ class GeneticProgramming:
 
             print(info[-1])
 
+            if self.save_pop_data:
+
+                pop_data.extend(self.get_pop_data(i))
+
+                # save to the file in chunks
+                if i % 1000 == 0:
+                    df_pop = pd.DataFrame(pop_data)
+                    df_pop.to_csv(output_path + 'pop_data_rep' + str(rep) + '.csv',
+                                  header=None,
+                                  index=None,
+                                  mode='a')
+                    pop_data = []
+
         # Save generational data
         df = pd.DataFrame(info)
         df.to_csv(output_path + output_file, index=None, header=header)
 
         # Save additional data for the last generation.
         self.save_final_error(output_path+'fitness_data_rep'+str(rep)+'_final')
+
+        # save remaining pop data
+        # This is necessary in case the total number
+        # of generations is not divisible by 1000.
+        if self.save_pop_data:
+
+            df_pop = pd.DataFrame(pop_data)
+            df_pop.to_csv(output_path+'pop_data_rep'+str(rep)+'.csv',
+                          header=None,
+                          index=None,
+                          mode='a')
+
 
         return info
 
