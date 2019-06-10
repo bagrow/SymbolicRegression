@@ -3,14 +3,14 @@ import protected_functions_writer
 import consts_writer
 
 # Read in the constants and protected functions
-from GeneticProgrammingAfpo.protected_functions import *
-from GeneticProgrammingAfpo.consts import *
+from GeneticProgramming.protected_functions import *
+from GeneticProgramming.consts import *
 
 # Now import like normal
-from GeneticProgrammingAfpo import GeneticProgrammingAfpo
-from GeneticProgrammingAfpo import GeneticProgramming
-import GeneticProgrammingAfpo.data_setup as ds
-import GeneticProgrammingAfpo.common_functions as cf
+from GeneticProgramming.GeneticProgrammingAfpo import GeneticProgrammingAfpo
+from GeneticProgramming.GeneticProgramming import GeneticProgramming
+import GeneticProgramming.data_setup as ds
+import GeneticProgramming.common_functions as cf
 
 import numpy as np
 import pandas as pd
