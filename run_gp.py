@@ -105,6 +105,16 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
                                     noise_std=noise_std,
                                     data_size=int(100000 / num_vars))[0]
 
+        A = function_dict[key]['a']
+        B = function_dict[key]['b']
+
+        if type(A) in (float, int):
+
+            A = [A]
+            B = [B]
+
+        params['interval'] = [interval([a, b]) for a, b in zip(A, B)]
+
     # if dataset
     elif 'path' in function_dict[key]:
         path = os.path.join(os.environ['DATASET_PATH'],
