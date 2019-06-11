@@ -1,4 +1,4 @@
-import pickling
+import pickling_setup.pickling as pickling
 
 import numpy as np
 from interval import interval, inf

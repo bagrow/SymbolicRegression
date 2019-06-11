@@ -11,7 +11,6 @@ setuptools.setup(
     description="Implementation of Genetic Programming.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    # url="",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",

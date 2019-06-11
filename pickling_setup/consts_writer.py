@@ -1,5 +1,5 @@
-from target_functions import *
-import pickling
+from pickling_setup.target_functions import *
+import pickling_setup.pickling as pickling
 
 import os
 
