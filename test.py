@@ -1,5 +1,5 @@
 import unittest
-import GeneticProgrammingAfpo as GP
+import GeneticProgramming as GP
 
 import numpy as np
 
@@ -133,7 +133,8 @@ def setup_individual():
 
     I = GP.Individual(np.random.RandomState(0),
                       primitive_set=['*', '+', '-'],
-                      terminal_set=['#x'])
+                      terminal_set=['#x'],
+                      AFSPO=False)
 
     return I
 
