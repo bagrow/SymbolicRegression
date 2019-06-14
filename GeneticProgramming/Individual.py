@@ -69,7 +69,7 @@ class Individual(Tree):
                       **params)
 
         # Order is error, age
-        self.fitness = np.zeros(3) if self.params['AFSPO'] else np.zeros(2)
+        self.fitness = np.zeros(3) if hasattr(self.params, 'AFSPO') else np.zeros(2)
 
         # fitness (that does not effect other fitness)
         # during symbolic regression
