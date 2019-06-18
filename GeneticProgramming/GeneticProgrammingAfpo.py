@@ -74,7 +74,7 @@ class GeneticProgrammingAfpo(GeneticProgramming):
             The number of individuals to generate through
             crossover.
         """
-        self.get_non_dominated_front()
+
         xover_parents = self.rng.choice(self.pop, size=(num_xover, 2))
         mut_parents = self.rng.choice(self.pop, size=num_mut)
 
