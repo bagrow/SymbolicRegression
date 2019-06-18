@@ -705,7 +705,7 @@ class Individual(Tree):
             self.evaluate_fitness(data)
 
 
-    def evaluate_fitness(self, data, attempts=40):
+    def evaluate_fitness(self, data, attempts=40, compute_val_error=True):
         """Calculate error for training data. If computing
         constants, try attempts number of times. Each time
         pick some random inital guess for the non-linear
@@ -726,14 +726,19 @@ class Individual(Tree):
             Number of times to compute the consants using different
             guesses. The best constants are used. This argument only
             has an effect if computed constants are being used.
+        compute_val_error : bool (default=True)
+            If True, compute the validation error. The dataset for
+            this is stored in data[1].
         """
 
         self.fitness[0] = 0
 
         x_data = data[0, :, 1:].T
-        x_data_val = data[1, :, 1:].T
         y_data = data[0, :, 0]
-        y_data_val = data[1, :, 0]
+
+        if compute_val_error:
+            x_data_val = data[1, :, 1:].T
+            y_data_val = data[1, :, 0]
 
         if self.params['IA']:
 
@@ -786,14 +791,18 @@ class Individual(Tree):
                 self.c = history[0][0]
 
                 self.fitness[0] = error(self.c, x_data, y_data)
-                self.validation_fitness = error(self.c, x_data_val, y_data_val)
+
+                if compute_val_error:
+                    self.validation_fitness = error(self.c, x_data_val, y_data_val)
 
             else:
 
                 error = lambda x, y, f=self.f: np.sqrt(np.mean(np.power(f(x) - y, 2)))
 
                 self.fitness[0] = error(x_data, y_data)
-                self.validation_fitness = error(x_data_val, y_data_val)
+
+                if compute_val_error:
+                    self.validation_fitness = error(x_data_val, y_data_val)
 
         else:
 
@@ -802,7 +811,9 @@ class Individual(Tree):
             error = lambda x, y, f=self.f: np.sqrt(np.mean(np.power(f(x) - y, 2)))
 
             self.fitness[0] = error(x_data, y_data)
-            self.validation_fitness = error(x_data_val, y_data_val)
+
+            if compute_val_error:
+                self.validation_fitness = error(x_data_val, y_data_val)
 
         if self.params['IA']:
 
