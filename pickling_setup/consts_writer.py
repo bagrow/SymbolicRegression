@@ -10,7 +10,7 @@ pickle_path_backup = os.path.join(os.environ['GP_DATA'], 'pickled', 'GeneticProg
 print('Writing Constansts from GeneticProgrammingAfpo')
 
 population_size = 100
-max_generations = 10
+max_generations = 1000
 
 # Functions from mainly from
 # "Genetic Programming Needs Better Benchmarks" 2012.
