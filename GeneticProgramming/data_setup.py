@@ -107,7 +107,7 @@ def get_input_data(rng, A, B, data_size=20, random_spacing=True):
 
     if random_spacing:
 
-        if type(A) == int or type(B) == float:
+        if type(A) == int or type(A) == float:
 
             x_data = A + (B - A) * rng.rand(data_size)
 
@@ -117,7 +117,7 @@ def get_input_data(rng, A, B, data_size=20, random_spacing=True):
                 [a + (b - a) * rng.rand(data_size * len(A)) for a, b in zip(A, B)])
     else:
 
-        if type(A) == int or type(B) == float:
+        if type(A) == int or type(A) == float:
 
             step = (B - A) / (data_size * len(A) - 1)
             x_data = np.arange(start=A, stop=B + step, step=step)
