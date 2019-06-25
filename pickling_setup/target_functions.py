@@ -42,5 +42,7 @@ def identity(x): return x
 def paige1(x): return 1/(1+x[0]**(-4)) + 1/(1+x[1]**(-4))
 def fr_test1(x): return np.sin(pdivide(x[0], x[1], value=0.))
 
+def rational1(x): return 1./x
+
 # convert constants to intervals
 def make_interval(const): return 'interval('+const+')'
