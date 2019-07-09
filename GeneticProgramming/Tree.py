@@ -1465,6 +1465,23 @@ class Tree:
 
 
     @staticmethod
+    def get_parent(loc):
+        """If loc is any node except the root,
+        return the location of its parent.
+
+        Example
+        -------
+        >>> GP.Tree.get_parent((0, 1, 0))
+        (0, 1)
+        """
+
+        # Check that loc is not the root
+        assert loc != (), 'Cannot get parent of root node'
+
+        return loc[:-1]
+
+
+    @staticmethod
     def get_other_child(loc):
         """If loc is one of two children
         then return the location of the other one.

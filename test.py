@@ -128,6 +128,14 @@ class TestTree(unittest.TestCase):
         standard = tree.convert_lisp_to_standard({'*': 'Mult'})
         self.assertEqual(standard, 'x[0]**2')
 
+    def test_get_parent(self):
+
+        loc = (1, 0)
+
+        parent = GP.Tree.get_parent(loc)
+
+        self.assertEqual(parent, (1,))
+
 
 def setup_individual():
 
