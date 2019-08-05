@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 import os
+import itertools
 
 # Functions in this file are used to generate training,
 # validation, and testing data.
@@ -442,3 +443,82 @@ def split_data(rng, data, ratio, with_replacement=False):
         remaining_indices = [i for i in range(len(data)) if i not in indices]
 
     return np.array(dataset[:2]), np.array(dataset[2])
+
+
+def get_k_folds(rng, k, dataset):
+    """Split the dataset into k equally sized pieces.
+
+    Parameters
+    ----------
+    rng : random number generator (like np.random.RandomState(0))
+    k : int
+        The number of folds to create.
+    dataset : list
+        The dataset to split into folds.
+
+    Results
+    -------
+    folds : list
+        The folds.
+    """
+
+
+    assert len(dataset) % k == 0, 'len(dataset) ('+str(len(dataset))+') is not divisible by k ('+str(k)+').'
+
+    rng.shuffle(dataset)
+
+    step = len(dataset)//k
+
+    folds = [dataset[i*step: (i+1)*step] for i in range(k)]
+
+    return folds
+
+
+def get_datasets_from_folds(i, folds):
+    """Get the training dataset and the
+    testing dataset. Use one fold as the
+    testing data and the rest as training
+    data.
+
+    Parameters
+    ----------
+    i : int
+        Indicates which fold to use as
+        the test set. Others will be used
+        for training
+    folds : list
+        The folds of data.
+
+    Returns
+    -------
+    train_data : np.array
+        The training data.
+    test_data : np.array
+        The testing data.
+    """
+
+    assert i < len(folds), 'There is no '+str(i)+'-th fold. i is too big'
+
+    test_data = folds[i]
+
+    train_data = list(itertools.chain(*(folds[:i] + folds[i+1:])))
+
+    return np.array(train_data), np.array(test_data)
+
+
+if __name__ == '__main__':
+
+    dataset = [[1, 2, 3],
+               [2, 3, 4],
+               [3, 4, 5],
+               [4, 5, 6],
+               [5, 6, 7],
+               [6, 7, 8]]
+
+    k = 3
+
+    folds = get_k_folds(np.random.RandomState(0), k, dataset)
+    print('folds', folds)
+
+    for i in range(k):
+        get_datasets_from_folds(i, folds)
