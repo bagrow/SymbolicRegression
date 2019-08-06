@@ -4,6 +4,7 @@ import GeneticProgramming.data_setup as ds
 from GeneticProgramming.consts import *
 import GeneticProgramming as GP
 from nes import evolutionary_strategy
+from get_computation import get_computation_time
 
 import cma
 import numpy as np
@@ -599,7 +600,7 @@ if __name__ == '__main__':
                         action='store', type=float, default=float('inf'))
 
     parser.add_argument('--cmaes', help='Use cma-es', action='store_true')
-    parser.add_argument('--nes', help='use natrual es', action='store_true')
+    parser.add_argument('--nes', help='Use natrual es', action='store_true')
 
 
     args = parser.parse_args()
@@ -609,6 +610,9 @@ if __name__ == '__main__':
 
     seed = args.rep + 1
     rng = np.random.RandomState(seed)
+
+    # Adjust time
+    timeout = get_computation_time(args.timeout)
 
     base_path = os.path.join(os.environ['GP_DATA'],
                              'function_builder/experiments',
@@ -713,7 +717,7 @@ if __name__ == '__main__':
                                       'ftarget': 1e-10,
                                       'seed': seed,
                                       'verb_log': 0,
-                                      'timeout': args.timeout},
+                                      'timeout': timeout},
                              restarts=0)
         print('popsize', es.popsize)
 
@@ -726,7 +730,7 @@ if __name__ == '__main__':
                                            args.num_partial_fills),
                                      max_evals=args.function_evals,
                                      seed=seed,
-                                     timeout=args.timeout,
+                                     timeout=timeout,
                                      learning_rate=0.1,
                                      npop=100)
 

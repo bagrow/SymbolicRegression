@@ -13,6 +13,8 @@ from GeneticProgramming.IndividualRestricted import IndividualRestricted
 import GeneticProgramming.data_setup as ds
 import GeneticProgramming.common_functions as cf
 
+from get_computation import get_computation_time
+
 import numpy as np
 import pandas as pd
 from interval import interval
@@ -299,7 +301,11 @@ params['AFSPO'] = False
 params['size'] = False
 params['count_asymptotes'] = False
 params['save_pop_data'] = False
-
+print(params['T'])
+# Adjust time
+params['T'] = get_computation_time(params['T'])
+print(params['T'])
+exit()
 print('last_folder', last_folder)
 
 if len(run_list) <= run_index:
