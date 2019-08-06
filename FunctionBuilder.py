@@ -1,7 +1,9 @@
-import pickling_setup.consts_writer_ft
-import pickling_setup.protected_functions_writer_ft
+import pickling_setup.consts_writer_fb
+import pickling_setup.protected_functions_writer_fb
+import GeneticProgramming.data_setup as ds
 from GeneticProgramming.consts import *
 import GeneticProgramming as GP
+from es import evolutionary_strategy
 
 import cma
 import numpy as np
@@ -550,17 +552,27 @@ def get_partial_fills(primitives, locations, num_fills):
 def f(W, dataset, depth, primitives, terminals, locations, use_multiple_networks, hidden, num_fills=10):
 
     pfills = get_partial_fills(primitives, locations, num_fills)
-    fitnesses = []
+    train_fitnesses = []
+    val_fitnesses = []
 
     for pfill in pfills:
 
         i = label_tree(pfill, W, depth, primitives, terminals, use_multiple_networks, hidden)
 
-        i.evaluate_fitness(dataset, compute_val_error=False)
+        i.evaluate_fitness(dataset, compute_val_error=True)
 
-        fitnesses.append(i.fitness[0])
+        train_fitnesses.append(i.fitness[0])
+        val_fitnesses.append(i.validation_fitness)
 
-    return np.mean(fitnesses)
+    val_fitness = np.mean(val_fitnesses)
+
+    global best
+
+    if val_fitness < best[0]:
+
+        best = (val_fitness, W)
+
+    return np.mean(train_fitnesses)
 
 
 if __name__ == '__main__':
@@ -586,9 +598,15 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--timeout', help='Number of seconds after which to stop.',
                         action='store', type=float, default=float('inf'))
 
+    parser.add_argument('--cmaes', help='Use cma-es', action='store_true')
+    parser.add_argument('--nes', help='use natrual es', action='store_true')
+
 
     args = parser.parse_args()
     print(args)
+
+    assert args.cmaes or args.nes, 'Either cmaes or nes must be True.'
+
     seed = args.rep + 1
     rng = np.random.RandomState(seed)
 
@@ -602,8 +620,8 @@ if __name__ == '__main__':
     if not os.path.exists(base_path):
         os.makedirs(base_path)
 
-    num_data_points = 200
-    frac_train = 0.5
+    num_data_points = 200*100
+    # frac_train = 0.7
 
     if args.func == 'test':
 
@@ -626,10 +644,22 @@ if __name__ == '__main__':
 
         dataset = np.vstack((target(X), X)).T
 
-    indices_train = rng.choice(num_data_points, size=int(num_data_points*frac_train), replace=False)
-    indices_test = np.array([i for i in range(num_data_points) if i not in indices_train])
-    dataset_train = np.array([dataset[indices_train]])
-    dataset_test = dataset[indices_test]
+    k = 100
+    folds = ds.get_k_folds(np.random.RandomState(0), k, dataset)
+
+    dataset_train, dataset_test = ds.get_datasets_from_folds(args.rep, folds)
+
+    val_frac = 0.2
+
+    indices_val = rng.choice(len(dataset_train),
+                             size=int(val_frac*len(dataset_train)),
+                             replace=False)
+    indices_train = [i for i in range(len(dataset_train)) if i not in indices_val]
+
+    dataset_val = np.array([dataset_train[i] for i in indices_val])
+    dataset_train = np.array([dataset_train[i] for i in indices_train])
+
+    dataset_train_val = [dataset_train, dataset_val]
 
     depth = args.depth
     primitives = ['*', '+', '-', '%', 'sin2', 'id2']
@@ -670,14 +700,26 @@ if __name__ == '__main__':
 
                 number_of_weights += sum([hidden[i]*hidden[i+1] for i in range(len(hidden)-1)])
 
-    xopt, es = cma.fmin2(f, 2*rng.rand(number_of_weights)-1, 0.1,
-                         args=(dataset_train, depth, primitives, terminals, locations, args.multiple_networks, hidden, args.num_partial_fills),
-                         options={'maxfevals': args.function_evals,
-                                  'ftarget': 1e-10,
-                                  'seed': seed,
-                                  'verb_log': 0,
-                                  'timeout': args.timeout},
-                         restarts=0)
+    if args.cmaes:
+
+        # best = (error, weights)
+        best = (float('inf'), None)
+
+        xopt, es = cma.fmin2(f, 2*rng.rand(number_of_weights)-1, 0.1,
+                             args=(dataset_train_val, depth, primitives, terminals, locations, args.multiple_networks, hidden, args.num_partial_fills),
+                             options={'maxfevals': args.function_evals,
+                                      'ftarget': 1e-10,
+                                      'seed': seed,
+                                      'verb_log': 0,
+                                      'timeout': args.timeout},
+                             restarts=0)
+
+        print('best validation error', best[0])
+        xopt = best[1]
+
+    elif args.nes:
+        # xopt = 
+        pass
 
     function_builder_data = []
 
@@ -685,7 +727,7 @@ if __name__ == '__main__':
 
         i = label_tree(pfill, xopt, depth, primitives, terminals, args.multiple_networks, hidden)
 
-        i.evaluate_fitness(dataset_train, compute_val_error=False)
+        i.evaluate_fitness(dataset_train_val, compute_val_error=True)
 
         i.evaluate_test_points(data=dataset_test)
 

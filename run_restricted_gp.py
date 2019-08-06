@@ -1,6 +1,6 @@
 # Overwrite (or create) the constants and protected functions
-import pickling_setup.protected_functions_writer_ft
-import pickling_setup.consts_writer_ft
+import pickling_setup.protected_functions_writer_fb
+import pickling_setup.consts_writer_fb
 
 # Read in the constants and protected functions
 from GeneticProgramming.protected_functions import *
