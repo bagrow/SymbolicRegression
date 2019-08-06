@@ -3,7 +3,7 @@ import pickling_setup.protected_functions_writer_fb
 import GeneticProgramming.data_setup as ds
 from GeneticProgramming.consts import *
 import GeneticProgramming as GP
-from es import evolutionary_strategy
+from nes import evolutionary_strategy
 
 import cma
 import numpy as np
@@ -700,12 +700,14 @@ if __name__ == '__main__':
 
                 number_of_weights += sum([hidden[i]*hidden[i+1] for i in range(len(hidden)-1)])
 
+    print('number of weights', number_of_weights)
+
+    # best = (error, weights)
+    best = (float('inf'), None)
+
     if args.cmaes:
 
-        # best = (error, weights)
-        best = (float('inf'), None)
-
-        xopt, es = cma.fmin2(f, 2*rng.rand(number_of_weights)-1, 0.1,
+        xopt, es = cma.fmin2(f, rng.randn(number_of_weights), 0.1,
                              args=(dataset_train_val, depth, primitives, terminals, locations, args.multiple_networks, hidden, args.num_partial_fills),
                              options={'maxfevals': args.function_evals,
                                       'ftarget': 1e-10,
@@ -713,13 +715,23 @@ if __name__ == '__main__':
                                       'verb_log': 0,
                                       'timeout': args.timeout},
                              restarts=0)
-
-        print('best validation error', best[0])
-        xopt = best[1]
+        print('popsize', es.popsize)
 
     elif args.nes:
-        # xopt = 
-        pass
+
+        xopt = evolutionary_strategy(f, w=rng.randn(number_of_weights),
+                                     args=(dataset_train_val, depth, primitives,
+                                           terminals, locations,
+                                           args.multiple_networks, hidden,
+                                           args.num_partial_fills),
+                                     max_evals=args.function_evals,
+                                     seed=seed,
+                                     timeout=args.timeout,
+                                     learning_rate=0.1,
+                                     npop=100)
+
+    print('best validation error', best[0])
+    xopt = best[1]
 
     function_builder_data = []
 
