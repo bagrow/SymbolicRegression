@@ -72,6 +72,10 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
         self.timeout = self.params['T']
         self.start_time = time.time()
 
+        # This is the best individual based
+        # on validation error.
+        self.best_individual = (float('inf'), None)
+
 
     def generate_population_ramped_half_and_half(self, size, init_max_depth):
         """Generate the population using the ramped half and half method.
@@ -143,6 +147,11 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
             The number of individuals to generate through
             crossover.
         """
+
+        # keep track of best individual
+        for p in self.pop:
+            if p.validation_fitness < self.best_individual[0]:
+                self.best_individual = (p.validation_fitness, p)
 
         xover_parents = self.rng.choice(self.pop, size=(num_xover, 2))
         mut_parents = self.rng.choice(self.pop, size=num_mut)
@@ -313,6 +322,23 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
 
         # Save additional data for the last generation.
         self.save_final_error(output_path+'fitness_data_rep'+str(rep)+'_final')
+
+        # Save best individual based on validation error
+
+        lisp = self.best_individual[1].get_lisp_string(actual_lisp=True)
+
+        self.best_individual[1].evaluate_test_points(self.test_data)
+
+        best_data = [lisp,
+                     self.best_individual[1].fitness[0],
+                     self.best_individual[0],
+                     self.best_individual[1].testing_fitness]
+
+        df_best = pd.DataFrame([best_data])
+        df_best.to_csv(output_path+'best_data_rep'+str(rep)+'.csv',
+                       index=False,
+                       header=['s-expression', 'Training Error', 'Validation Error', 'Testing Error'])
+
 
         # save remaining pop data
         # This is necessary in case the total number
