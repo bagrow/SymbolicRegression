@@ -721,8 +721,9 @@ class Individual(Tree):
 
         Parameters
         ----------
-        data : np.array
-            An np.array of 2D np.arrays. At the top layer, the
+        data : list of np.array
+            The list contains the datasets (training and testing),
+            which are np.arrays. At the top layer, the
             list is split into training and validation datasets.
             Next, into the actual data with output followed by
             each input. That is, a row of data is of the form
@@ -738,12 +739,12 @@ class Individual(Tree):
 
         self.fitness[0] = 0
 
-        x_data = data[0, :, 1:].T
-        y_data = data[0, :, 0]
+        x_data = data[0][:, 1:].T
+        y_data = data[0][:, 0]
 
         if compute_val_error:
-            x_data_val = data[1, :, 1:].T
-            y_data_val = data[1, :, 0]
+            x_data_val = data[1][:, 1:].T
+            y_data_val = data[1][:, 0]
 
         if self.params['IA']:
 
