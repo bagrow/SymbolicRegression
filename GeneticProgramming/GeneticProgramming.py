@@ -522,7 +522,8 @@ class GeneticProgramming:
 
             pop_data_header = ['Generation', 'Index', 'Root Mean Squared Error', 'Age', 'Equation']
             df_pop = pd.DataFrame(pop_data)
-            df_pop.to_csv(output_path + 'pop_data_rep' + str(rep) + '.csv', header=pop_data_header, index=None)
+            df_pop.to_csv(os.path.join(output_path, 'pop_data_rep'+str(rep)+'.csv'),
+                          header=pop_data_header, index=None)
             info = []
 
         num_xover = int(self.prob_xover * population_size)
@@ -550,7 +551,7 @@ class GeneticProgramming:
                 # save to the file in chunks
                 if i % 1000 == 0:
                     df_pop = pd.DataFrame(pop_data)
-                    df_pop.to_csv(output_path + 'pop_data_rep' + str(rep) + '.csv',
+                    df_pop.to_csv(os.path.join(output_path, 'pop_data_rep'+str(rep)+'.csv'),
                                   header=None,
                                   index=None,
                                   mode='a')
@@ -561,7 +562,7 @@ class GeneticProgramming:
         df.to_csv(output_path + output_file, index=None, header=header)
 
         # Save additional data for the last generation.
-        self.save_final_error(output_path+'fitness_data_rep'+str(rep)+'_final')
+        self.save_final_error(os.path.join(output_path, 'fitness_data_rep'+str(rep)+'_final'))
 
         # save remaining pop data
         # This is necessary in case the total number
@@ -569,11 +570,10 @@ class GeneticProgramming:
         if self.save_pop_data:
 
             df_pop = pd.DataFrame(pop_data)
-            df_pop.to_csv(output_path+'pop_data_rep'+str(rep)+'.csv',
+            df_pop.to_csv(os.path.join(output_path, 'pop_data_rep'+str(rep)+'.csv'),
                           header=None,
                           index=None,
                           mode='a')
-
 
         return info
 
