@@ -158,29 +158,14 @@ def get_folder(parameters):
         is appropriate for folders.
     """
 
-    str_values = [str(int(parameters[key])) for key in parameters]
+    str_values = []
+
+    for key in parameters:
+
+        if parameters[key] == float('inf'):
+            str_values.append('inf')
+
+        else:
+            str_values.append(str(int(parameters[key])))
 
     return '_'.join(key+str_values[i] for i, key in enumerate(parameters))
-
-
-if __name__ == '__main__':
-
-    import os
-
-    path = os.path.join(os.environ['GP_DATA'], 'pickled', 'pickle_test.pickle')
-
-    dir = os.path.dirname(path)
-
-    if not os.path.exists(dir):
-        os.makedirs(dir)
-
-    # name = 'Ryan'
-    # number = 37
-
-    # data = (name, number)
-
-    # pickle_this(data, path)
-
-    data = unpickle_this(path)
-
-    print('data', data)
