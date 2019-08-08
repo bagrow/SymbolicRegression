@@ -5,6 +5,7 @@ import pandas as pd
 
 import os
 import copy
+import time
 
 
 class GeneticProgramming:
@@ -82,6 +83,11 @@ class GeneticProgramming:
             self.mutation_param = self.rng.randint(4, 5)
 
         self.save_pop_data = self.params['save_pop_data']
+
+        if 'T' in self.params:
+
+            self.timeout = self.params['T']
+            self.start_time = time.time()
 
 
     def generate_population_ramped_half_and_half(self, size, init_max_depth):
@@ -556,6 +562,10 @@ class GeneticProgramming:
                                   index=None,
                                   mode='a')
                     pop_data = []
+
+            # Stop, if ran out of time, but still save stuff.
+            if time.time() - self.start_time > self.timeout:
+                break
 
         # Save generational data
         df = pd.DataFrame(info)
