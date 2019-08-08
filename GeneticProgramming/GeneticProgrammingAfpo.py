@@ -75,6 +75,11 @@ class GeneticProgrammingAfpo(GeneticProgramming):
             crossover.
         """
 
+        # keep track of best individual
+        for p in self.pop:
+            if p.validation_fitness < self.best_individual[0]:
+                self.best_individual = (p.validation_fitness, p)
+
         xover_parents = self.rng.choice(self.pop, size=(num_xover, 2))
         mut_parents = self.rng.choice(self.pop, size=num_mut)
 

@@ -89,6 +89,10 @@ class GeneticProgramming:
             self.timeout = self.params['T']
             self.start_time = time.time()
 
+        # This is the best individual based
+        # on validation error.
+        self.best_individual = (float('inf'), None)
+
 
     def generate_population_ramped_half_and_half(self, size, init_max_depth):
         """Generate the population using the ramped half and half method.
@@ -382,6 +386,11 @@ class GeneticProgramming:
             crossover.
         """
 
+        # keep track of best individual
+        for p in self.pop:
+            if p.validation_fitness < self.best_individual[0]:
+                self.best_individual = (p.validation_fitness, p)
+
         # Make a dictionary of front individuals. Keep key as index.
         self.get_non_dominated_front()
 
@@ -573,6 +582,21 @@ class GeneticProgramming:
 
         # Save additional data for the last generation.
         self.save_final_error(os.path.join(output_path, 'fitness_data_rep'+str(rep)+'_final'))
+
+        # Save best individual based on validation error
+        lisp = self.best_individual[1].get_lisp_string(actual_lisp=True)
+
+        self.best_individual[1].evaluate_test_points(self.test_data)
+
+        best_data = [lisp,
+                     self.best_individual[1].fitness[0],
+                     self.best_individual[0],
+                     self.best_individual[1].testing_fitness]
+
+        df_best = pd.DataFrame([best_data])
+        df_best.to_csv(os.path.join(output_path, 'best_data_rep'+str(rep)+'.csv'),
+                       index=False,
+                       header=['s-expression', 'Training Error', 'Validation Error', 'Testing Error'])
 
         # save remaining pop data
         # This is necessary in case the total number
