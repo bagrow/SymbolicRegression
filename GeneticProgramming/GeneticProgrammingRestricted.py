@@ -69,9 +69,6 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
                                         init_max_depth, max_depth, individual=IndividualRestricted,
                                         mutation_param=mutation_param, **individual_params)
 
-        self.timeout = self.params['T']
-        self.start_time = time.time()
-
         # This is the best individual based
         # on validation error.
         self.best_individual = (float('inf'), None)
@@ -278,7 +275,8 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
 
             pop_data_header = ['Generation', 'Index', 'Root Mean Squared Error', 'Age', 'Equation']
             df_pop = pd.DataFrame(pop_data)
-            df_pop.to_csv(output_path + 'pop_data_rep' + str(rep) + '.csv', header=pop_data_header, index=None)
+            df_pop.to_csv(os.path.join(output_path, 'pop_data_rep'+str(rep)+'.csv'),
+                          header=pop_data_header, index=None)
             info = []
 
         num_xover = int(self.prob_xover * population_size)
@@ -306,7 +304,7 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
                 # save to the file in chunks
                 if i % 1000 == 0:
                     df_pop = pd.DataFrame(pop_data)
-                    df_pop.to_csv(output_path + 'pop_data_rep' + str(rep) + '.csv',
+                    df_pop.to_csv(os.path.join(output_path, 'pop_data_rep'+str(rep)+'.csv'),
                                   header=None,
                                   index=None,
                                   mode='a')
@@ -321,7 +319,7 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
         df.to_csv(output_path + output_file, index=None, header=header)
 
         # Save additional data for the last generation.
-        self.save_final_error(output_path+'fitness_data_rep'+str(rep)+'_final')
+        self.save_final_error(os.path.join(output_path, 'fitness_data_rep'+str(rep)+'_final'))
 
         # Save best individual based on validation error
 
@@ -335,7 +333,7 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
                      self.best_individual[1].testing_fitness]
 
         df_best = pd.DataFrame([best_data])
-        df_best.to_csv(output_path+'best_data_rep'+str(rep)+'.csv',
+        df_best.to_csv(os.path.join(output_path, 'best_data_rep'+str(rep)+'.csv'),
                        index=False,
                        header=['s-expression', 'Training Error', 'Validation Error', 'Testing Error'])
 
@@ -346,7 +344,7 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
         if self.save_pop_data:
 
             df_pop = pd.DataFrame(pop_data)
-            df_pop.to_csv(output_path+'pop_data_rep'+str(rep)+'.csv',
+            df_pop.to_csv(os.path.join(output_path, 'pop_data_rep'+str(rep)+'.csv'),
                           header=None,
                           index=None,
                           mode='a')

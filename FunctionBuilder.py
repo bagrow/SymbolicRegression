@@ -61,15 +61,6 @@ def get_one_hot_encoding(x, labels):
     return encoding
 
 
-def test_get_one_hot_encoding():
-
-    primitives = ['+', '-', '%', '*']
-
-    encoding = get_one_hot_encoding('%', primitives)
-
-    assert np.all(encoding == [0, 0, 1, 0])
-
-
 def partially_fill_tree(pfill, ind):
     """Given partial fill (named pfill), update
     lisp.
@@ -349,7 +340,8 @@ def label_node(tree, W, weight_dims, primitives, terminals, possible_output_labe
     return tree, bookmark
 
 
-def label_tree(pfill, W, depth, primitives, terminals, use_multiple_networks, hidden):
+def label_tree(rng, pfill, W, depth, primitives, terminals,
+               use_multiple_networks, hidden):
     """Given the some existing labels (pfill),
     the depth of the full tree, and the weights of
     a neural network, label the remainder of the tree.
@@ -361,10 +353,7 @@ def label_tree(pfill, W, depth, primitives, terminals, use_multiple_networks, hi
         where key=node location and value=label.
     W : np.array
         A one dimensional array that represents
-        the neural network. If a non-leaf node is being
-        labeled, then it requires len(primitives) number
-        of output nodes ortherwise it needs len(terminals).
-        Weights are ordered like a lisp.
+        the neural network.
     depth : int
         The depth of the tree. This is used to
         reshape the weight array.
@@ -377,7 +366,6 @@ def label_tree(pfill, W, depth, primitives, terminals, use_multiple_networks, hi
         in the network. Every integer in the tuple
         specifies the number of nodes in that layer.
 
-
     Returns
     -------
     ind : GP.Individual
@@ -387,7 +375,7 @@ def label_tree(pfill, W, depth, primitives, terminals, use_multiple_networks, hi
     # Create an full tree of desired depth with _t_ for terminals
     # and _p_ for primitves. These labels will make it easy to
     # identify the accepible labels.
-    ind = GP.Individual(rng, primitive_set=['_p_'],
+    ind = GP.Individual(rng=rng, primitive_set=['_p_'],
                         terminal_set=['_t_'], method='full', depth=depth, IA=False)
 
     # Partially fill the tree. This
@@ -450,7 +438,7 @@ def label_tree(pfill, W, depth, primitives, terminals, use_multiple_networks, hi
             if use_multiple_networks:
 
                 num_inputs = (len(primitives)+len(terminals))*(2**depth-1)
-                num_outputs = len(primitives)
+                num_outputs = len_terminals
 
             dims = (num_inputs, num_outputs)
 
@@ -466,18 +454,24 @@ def label_tree(pfill, W, depth, primitives, terminals, use_multiple_networks, hi
     return ind
 
 
-def get_partial_fills(primitives, locations, num_fills):
+def get_partial_fills(rng, primitives, terminals, locations, num_fills):
     """Get dictionary that will be used to fill the tree.
 
     Parameters
     ----------
-    num_non_leaf : int
-        The number of nodes that are not leaves (and not root).
-        These are the nodes where primitives are placed.
-    num_labels : int
-        The number of primitives (or possible labels).
+    rng : random  number generator
+        Example - np.random.RandomState(0)
+    primitives : list
+        The priitives set
+    terminals : list
+        The terminal set
+    locations : tuple
+        The locations of nodes in the tree that
+        can be fill during a partial fill. See usage
+        in get_partial_fills().
     num_fills : int
-        The number of partial fills to create.
+        The number of partial fills to use during training.
+        This is passed to get_partial_fills().
 
     Returns
     -------
@@ -486,15 +480,10 @@ def get_partial_fills(primitives, locations, num_fills):
         where key=location and value=label.
     """
 
-    # k is the number of non-leaf nodes to fill.
-    # m = len(primitives)
-    n = len(locations)
-    # p = [m**(k-1)*(m-1)/(m**(n)-1) for k in range(1, n+1)]
-
     pfills = [{(): p} for p in primitives]
 
     # This will happen if depth = 1
-    if n == 0:
+    if len(locations) == 0:
         return pfills
 
     terminal_depth = max(map(len, locations))
@@ -550,15 +539,69 @@ def get_partial_fills(primitives, locations, num_fills):
     return pfills
 
 
-def f(W, dataset, depth, primitives, terminals, locations, use_multiple_networks, hidden, num_fills=10):
+def f(W, rng, dataset, depth, primitives, terminals, locations,
+      use_multiple_networks, hidden, num_fills):
+    """For num_fills partial fills label a tree using
+    weights W. Get the average of the errors of these trees
+    and return it. Also, keep track of the best individual
+    in terms of the validation data.
 
-    pfills = get_partial_fills(primitives, locations, num_fills)
+    Parameters
+    ----------
+    W : np.array
+        A one dimensional array that represents
+        the neural network.
+    rng : random  number generator
+        Example - np.random.RandomState(0)
+    dataset : list of np.arrays
+        A list of two datasets: training and
+        validation. Each dataset is a 2D np.array.
+    depth : int
+        The depth of the tree. This is used to
+        reshape the weight array.
+    primitives : list
+        The priitives set
+    terminals : list
+        The terminal set
+    locations : tuple
+        The locations of nodes in the tree that
+        can be fill during a partial fill. See usage
+        in get_partial_fills().
+    use_multiple_networks : bool
+        If True, use one neural network for each node
+        except root (because root is never labeled by nn).
+        If False, use a single neural network to label each
+        node in the tree.
+    hidden : tuple
+        A description of the hidden layers
+        in the network. Every integer in the tuple
+        specifies the number of nodes in that layer.
+    num_fills : int
+        The number of partial fills to use during training.
+        This is passed to get_partial_fills().
+
+    Returns
+    -------
+    mean_error : float
+        The mean of the errors of trees built
+        by the neural network with weights W
+        for each of the num_fills partial fills.
+
+    Others
+    ------
+    best : tuple
+        A tuple of the best individual based on
+        the average validation error. This variable
+        is of the form (error, weights)
+    """
+
+    pfills = get_partial_fills(rng, primitives, terminals, locations, num_fills)
     train_fitnesses = []
     val_fitnesses = []
 
     for pfill in pfills:
 
-        i = label_tree(pfill, W, depth, primitives, terminals, use_multiple_networks, hidden)
+        i = label_tree(rng, pfill, W, depth, primitives, terminals, use_multiple_networks, hidden)
 
         i.evaluate_fitness(dataset, compute_val_error=True)
 
@@ -574,6 +617,150 @@ def f(W, dataset, depth, primitives, terminals, locations, use_multiple_networks
         best = (val_fitness, W)
 
     return np.mean(train_fitnesses)
+
+
+def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
+                         rep, multiple_networks, cmaes, nes, hidden,
+                         num_partial_fills, base_path, timeout=float('inf'),
+                         function_evals=float('inf')):
+
+    """Given all the parameters, run function builder.
+
+    Parameters
+    ----------
+    primitives : list
+        The primitive set.
+    terminals : list
+        The terminal set.
+    depth : int
+        The depth of the tree to be labelled.
+    dataset : list of np.arrays
+        A list of two datasets: training and
+        validation. Each dataset is a 2D np.array.
+    dataset_test : np.array
+        The testing dataset.
+    rep : int
+        The repition number. This is used to name
+        the output file and set the seed to the
+        random number generator.
+    multiple_networks : bool
+        If True one network is used for each
+        node (except the root node). If False,
+        one network is used repeatedly to label
+        all nodes.
+    cmaes : bool
+        If True, cmaes is used to train the weights
+        in the nn that labels the tree.
+    nes : bool
+        If True, natural evolutionary strategies is used
+        to train the weights in the nn that labels the tree.
+    hidden : list or None
+        A list of the size of each hidden layer in the network.
+        Only used if multiple_networks==False.
+    num_partial_fills : int
+        The number of partial fills to use. This is the number
+        passed to get_partial_fills().
+    base_path : str
+        The directory in which to write data.
+    timeout : float (default=float('inf'))
+        The max amount of time to spend training the weights.
+        If the amount of time is exceeded, stop training.
+    function_evals : float (default=float('inf'))
+        The max number of function evaluations (calls to f(), which
+        labels all partial labels). If this number of evaluations is
+        exceeded, stop training.
+    """
+
+    seed = rep + 1
+    rng = np.random.RandomState(seed)
+
+    fake_individual = GP.Individual(rng=rng, primitive_set=primitives,
+                                    terminal_set=terminals, method='full', depth=depth)
+
+    node_dict = fake_individual.get_node_dict()
+    locations = list(node_dict.keys())
+    locations.remove(())
+
+    len_terminals = len(terminals)+1 if '#f' in terminals else len(terminals)
+
+    if multiple_networks:
+        number_of_weights = len(primitives)*((2**depth-2)*len(primitives) + 2**depth*len(terminals))*(2**depth-2)+len_terminals*(2**depth-1)*(len(primitives)+len(terminals))*2**depth
+
+    else:
+
+        if hidden is None:
+            number_of_weights = ((2**depth-1)*len(primitives)+2**depth*len(terminals)+2)*(len(primitives)+len_terminals)
+
+        else:
+
+            number_of_weights = ((2**depth-1)*len(primitives)+2**depth*len(terminals)+2)*hidden[0]+hidden[-1]*(len(primitives)+len_terminals)
+
+            if len(hidden) > 1:
+
+                number_of_weights += sum([hidden[i]*hidden[i+1] for i in range(len(hidden)-1)])
+
+    print('number of weights', number_of_weights)
+
+    global best
+
+    # best = (error, weights)
+    best = (float('inf'), None)
+
+    if cmaes:
+
+        xopt, es = cma.fmin2(f, rng.randn(number_of_weights), 0.1,
+                             args=(rng, dataset, depth, primitives, terminals, locations, multiple_networks, hidden, num_partial_fills),
+                             options={'maxfevals': function_evals,
+                                      'ftarget': 1e-10,
+                                      'seed': seed,
+                                      'verb_log': 0,
+                                      'timeout': timeout},
+                             restarts=0)
+        print('popsize', es.popsize)
+
+    elif nes:
+
+        xopt = evolutionary_strategy(f, w=rng.randn(number_of_weights),
+                                     args=(rng, dataset, depth, primitives,
+                                           terminals, locations,
+                                           multiple_networks, hidden,
+                                           num_partial_fills),
+                                     max_evals=function_evals,
+                                     seed=seed,
+                                     timeout=timeout,
+                                     learning_rate=0.1,
+                                     npop=100)
+
+    print('best validation error', best[0])
+    xopt = best[1]
+
+    function_builder_data = []
+
+    for pfill in [{(): '*'}, {(): '%'}, {(): '+'}, {(): '-'}, {(): 'id2'}, {(): 'sin2'}]:
+
+        i = label_tree(rng, pfill, xopt, depth, primitives, terminals, multiple_networks, hidden)
+
+        i.evaluate_fitness(dataset, compute_val_error=True)
+
+        i.evaluate_test_points(data=dataset_test)
+
+        if hasattr(i, 'c'):
+            print(i.c)
+
+        lisp = i.get_lisp_string(actual_lisp=True)
+        print(lisp)
+
+        row = [lisp, i.fitness[0], i.validation_fitness, i.testing_fitness]
+        function_builder_data.append(row)
+
+    filename_id = '_rep'+str(rep)
+
+    df_weights = pd.DataFrame(xopt)
+    df_weights.to_csv(os.path.join(base_path, 'weights'+filename_id+'.csv'), index=False, header=None)
+
+    df_function_builder = pd.DataFrame(function_builder_data)
+    df_function_builder.to_csv(os.path.join(base_path, 'function_builder_data'+filename_id+'.csv'), index=False,
+                               header=['s-expression', 'Training Error', 'Validation Error', 'Testing Error'])
 
 
 if __name__ == '__main__':
@@ -611,8 +798,11 @@ if __name__ == '__main__':
     seed = args.rep + 1
     rng = np.random.RandomState(seed)
 
-    # Adjust time
-    timeout = get_computation_time(args.timeout)
+    if args.timeout != float('inf'):
+        timeout = get_computation_time(args.timeout)
+
+    else:
+        timeout = args.timeout
 
     base_path = os.path.join(os.environ['GP_DATA'],
                              'function_builder/experiments',
@@ -669,98 +859,9 @@ if __name__ == '__main__':
     primitives = ['*', '+', '-', '%', 'sin2', 'id2']
     terminals = ['x0', 'x1', '#f']
 
-    fake_individual = GP.Individual(rng=rng, primitive_set=primitives,
-                                    terminal_set=terminals, method='full', depth=depth)
-
-    node_dict = fake_individual.get_node_dict()
-    # locations = [key for key in node_dict if node_dict[key] in primitives and key != ()]
-    locations = list(node_dict.keys())
-    locations.remove(())
-
-    len_terminals = len(terminals)+1 if '#f' in terminals else len(terminals)
-
-    # number_of_weights = ((2**depth)-2)*len(primitives)**2 + (2**depth)*len(primitives)*(len(terminals)+1)
-
-    # The hidden layer structure as a tuple.
-    # () = no hidden layers
-    # (n,) =  one hidden layer with n nodes
-    # (n, m) = two hidden layers, the first with n nodes and the second with m nodes
-    # ...
-    hidden = args.hidden
-
-    if args.multiple_networks:
-        number_of_weights = len(primitives)*((2**depth-2)*len(primitives) + 2**depth*len(terminals))*(2**depth-2)+len_terminals*(2**depth-1)*(len(primitives)+len(terminals))*2**depth
-
-    else:
-
-        if hidden is None:
-            number_of_weights = ((2**depth-1)*len(primitives)+2**depth*len(terminals)+2)*(len(primitives)+len_terminals)
-
-        else:
-
-            number_of_weights = ((2**depth-1)*len(primitives)+2**depth*len(terminals)+2)*hidden[0]+hidden[-1]*(len(primitives)+len_terminals)
-
-            if len(hidden) > 1:
-
-                number_of_weights += sum([hidden[i]*hidden[i+1] for i in range(len(hidden)-1)])
-
-    print('number of weights', number_of_weights)
-
-    # best = (error, weights)
-    best = (float('inf'), None)
-
-    if args.cmaes:
-
-        xopt, es = cma.fmin2(f, rng.randn(number_of_weights), 0.1,
-                             args=(dataset_train_val, depth, primitives, terminals, locations, args.multiple_networks, hidden, args.num_partial_fills),
-                             options={'maxfevals': args.function_evals,
-                                      'ftarget': 1e-10,
-                                      'seed': seed,
-                                      'verb_log': 0,
-                                      'timeout': timeout},
-                             restarts=0)
-        print('popsize', es.popsize)
-
-    elif args.nes:
-
-        xopt = evolutionary_strategy(f, w=rng.randn(number_of_weights),
-                                     args=(dataset_train_val, depth, primitives,
-                                           terminals, locations,
-                                           args.multiple_networks, hidden,
-                                           args.num_partial_fills),
-                                     max_evals=args.function_evals,
-                                     seed=seed,
-                                     timeout=timeout,
-                                     learning_rate=0.1,
-                                     npop=100)
-
-    print('best validation error', best[0])
-    xopt = best[1]
-
-    function_builder_data = []
-
-    for pfill in [{(): '*'}, {(): '%'}, {(): '+'}, {(): '-'}, {(): 'id2'}, {(): 'sin2'}]:
-
-        i = label_tree(pfill, xopt, depth, primitives, terminals, args.multiple_networks, hidden)
-
-        i.evaluate_fitness(dataset_train_val, compute_val_error=True)
-
-        i.evaluate_test_points(data=dataset_test)
-
-        if hasattr(i, 'c'):
-            print(i.c)
-
-        lisp = i.get_lisp_string(actual_lisp=True)
-        print(lisp)
-
-        row = [lisp, i.fitness[0], i.testing_fitness]
-        function_builder_data.append(row)
-
-    filename_id = '_rep'+str(args.rep)
-
-    df_weights = pd.DataFrame(xopt)
-    df_weights.to_csv(os.path.join(base_path, 'weights'+filename_id+'.csv'), index=False, header=None)
-
-    df_function_builder = pd.DataFrame(function_builder_data)
-    df_function_builder.to_csv(os.path.join(base_path, 'function_builder_data'+filename_id+'.csv'), index=False,
-                               header=['s-expression', 'Training Error', 'Testing Error'])
+    run_function_builder(primitives=primitives, terminals=terminals, depth=depth,
+                         dataset=dataset_train_val, dataset_test=dataset_test,
+                         rep=args.rep, multiple_networks=args.multiple_networks,
+                         cmaes=args.cmaes, nes=args.nes, hidden=args.hidden,
+                         num_partial_fills=args.num_partial_fills, base_path=base_path,
+                         timeout=timeout, function_evals=args.function_evals)
