@@ -172,11 +172,21 @@ else:
 
 rng = np.random.RandomState(exp)
 
-if args.func == 'test':
+if args.func in ('test', 'linear', 'quadratic-1', 'quadratic-2', 'quadratic-3'):
 
     num_data_points = 200*100
 
-    target = lambda x: 2*x[0]
+    if args.func == 'test' or args.func == 'linear':
+        target = lambda x: 2*x[0]
+
+    elif args.func == 'quadratic-1':
+        target = lambda x: x[0]**2
+
+    elif args.func == 'quadratic-2':
+        target = lambda x: x[0]**2 - 1.
+
+    elif args.func == 'quadratic-3':
+        target = lambda x: x[0]**2+2*x[0]+2
 
     X1 = np.linspace(-1, 1, num_data_points)
     X2 = np.linspace(-20, 3, num_data_points)
