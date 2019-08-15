@@ -2,8 +2,8 @@ import numpy as np
 
 import time
 
-def evolutionary_strategy(f, w, seed=0, npop=50, noise_std=0.1, learning_rate=0.001,
-                          timeout=float('inf'), max_evals=float('inf'), args=()):
+def nes(f, w, seed=0, npop=50, noise_std=0.1, learning_rate=0.001,
+        timeout=float('inf'), max_evals=float('inf'), args=()):
     """Natrual Evolutaionary startegy modified from
     https://gist.github.com/karpathy/77fbb6a8dac5395f1b73e7a89300318d
 
@@ -137,5 +137,5 @@ if __name__ == '__main__':
         return reward
 
 
-    best = evolutionary_strategy(f, num_weights=3, args=(train_data,), timeout=3)
+    best = nes(f, num_weights=3, args=(train_data,), timeout=3)
     print('best', best)

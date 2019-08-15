@@ -43,7 +43,7 @@ parser.add_argument('-re', '--redos', help='Specific runs to do',
                     type=str, action='store', default='')
 
 # GP settings
-parser.add_argument('-r', '--restriction', help='If False, run standard GP instead of restricted.',
+parser.add_argument('-rgp', '--restricted_gp', help='If False, run standard GP instead of restricted.',
                     action='store_false')
 
 # Function Builder Settings
@@ -57,6 +57,8 @@ parser.add_argument('--hidden', help='The number of hidden nodes in each layer a
                     type=int, nargs='+', action='store')
 parser.add_argument('--cmaes', help='Use cma-es', action='store_true')
 parser.add_argument('--nes', help='Use natrual es', action='store_true')
+parser.add_argument('-nr', '--no_restrictions', help='Do not use restriction (partial fills).',
+                    action='store_true')
 
 # General Settings
 parser.add_argument('-t', '--timeout', help='Number of seconds after which to stop.',
@@ -105,7 +107,7 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
                prob_mutate, prob_xover, mutation_param,
                rep, output_path, output_file, **params):
 
-    if args.restriction:
+    if args.restricted_gp:
         gp = GeneticProgrammingRestricted(rng=rng,
                                           pop_size=pop_size,
                                           primitive_set=primitive_set,
@@ -150,7 +152,8 @@ params['NES'] = args.nes
 params['D'] = args.depth
 params['M'] = args.multiple_networks
 params['H'] = args.hidden[0] if args.hidden is not None else 0
-params['R'] = args.restriction
+params['RGP'] = args.restricted_gp
+params['NR'] = args.no_restrictions
 params['T'] = args.timeout
 params['NPF'] = args.num_partial_fills
 
@@ -296,12 +299,13 @@ if args.function_builder:
     FB.run_function_builder(primitives=primitive_set, terminals=terminal_set, depth=args.depth,
                             dataset=dataset, dataset_test=dataset_test,
                             rep=args.rep, multiple_networks=args.multiple_networks,
-                            cmaes=args.cmaes, nes=args.nes, hidden=args.hidden,
+                            use_cmaes=args.cmaes, use_nes=args.nes, hidden=args.hidden,
                             num_partial_fills=args.num_partial_fills, base_path=base_path,
-                            timeout=timeout, function_evals=args.function_evals)
+                            timeout=timeout, function_evals=args.function_evals,
+                            no_restrictions=args.no_restrictions)
 else:
 
-    if args.restriction:
+    if args.restricted_gp:
 
         fake_individual = GP.Individual(rng=rng, primitive_set=primitive_set,
                                         terminal_set=terminal_set, method='full',
