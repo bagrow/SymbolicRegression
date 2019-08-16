@@ -98,7 +98,10 @@ class IndividualRestricted(Individual):
 
         if depth is None:
 
-            depth = max_depth
+            depth = self.max_depth
+
+        assert depth <= self.max_depth, ('The requested depth of the tree is larger'
+                                         ' than the max_depth')
 
         # Figure out which method to use to create tree.
         # If none specified pick one at random.

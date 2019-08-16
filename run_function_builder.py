@@ -45,6 +45,8 @@ parser.add_argument('-re', '--redos', help='Specific runs to do',
 # GP settings
 parser.add_argument('-rgp', '--restricted_gp', help='If False, run standard GP instead of restricted.',
                     action='store_false')
+parser.add_argument('-cgpmd', '--change_gp_max_depth', help='Allow the max depth of GP to be changed.',
+                    action='store_true')
 
 # Function Builder Settings
 parser.add_argument('-f', '--function_builder', help='If True, run function builder.',
@@ -107,6 +109,16 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
                prob_mutate, prob_xover, mutation_param,
                rep, output_path, output_file, **params):
 
+    if args.change_gp_max_depth:
+
+        init_max_depth = args.depth
+        max_depth = args.depth
+
+    else:
+
+        init_max_depth = 6
+        max_depth = 17
+
     if args.restricted_gp:
         gp = GeneticProgrammingRestricted(rng=rng,
                                           pop_size=pop_size,
@@ -118,6 +130,8 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
                                           prob_mutate=prob_mutate,
                                           prob_xover=prob_xover,
                                           num_vars=num_vars,
+                                          init_max_depth=init_max_depth,
+                                          max_depth=max_depth,
                                           mutation_param=mutation_param,
                                           individual=IndividualRestricted,
                                           # parameters below
@@ -134,6 +148,8 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
                                     prob_mutate=prob_mutate,
                                     prob_xover=prob_xover,
                                     num_vars=num_vars,
+                                    init_max_depth=init_max_depth,
+                                    max_depth=max_depth,
                                     mutation_param=mutation_param,
                                     # parameters below
                                     **params)
@@ -149,7 +165,7 @@ params = collections.OrderedDict()
 params['FB'] = args.function_builder
 params['CMAES'] = args.cmaes
 params['NES'] = args.nes
-params['D'] = args.depth
+params['D'] = args.depth if args.function_builder or args.change_gp_max_depth else 0
 params['M'] = args.multiple_networks
 params['H'] = args.hidden[0] if args.hidden is not None else 0
 params['RGP'] = args.restricted_gp
@@ -175,7 +191,7 @@ else:
 
 rng = np.random.RandomState(exp)
 
-if args.func in ('test', 'linear', 'quadratic-1', 'quadratic-2', 'quadratic-3'):
+if args.func in ('test', 'linear', 'quadratic-1', 'quadratic-2', 'quadratic-3', 'quadratic-4'):
 
     num_data_points = 200*100
 
@@ -190,6 +206,9 @@ if args.func in ('test', 'linear', 'quadratic-1', 'quadratic-2', 'quadratic-3'):
 
     elif args.func == 'quadratic-3':
         target = lambda x: x[0]**2+2*x[0]+2
+
+    elif args.func == 'quadratic-4':
+        target = lambda x: 0.5*x[0]**2 + np.sqrt(2)*x[0] - 1.
 
     X1 = np.linspace(-1, 1, num_data_points)
     X2 = np.linspace(-20, 3, num_data_points)

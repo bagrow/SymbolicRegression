@@ -69,6 +69,8 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
                                         init_max_depth, max_depth, individual=IndividualRestricted,
                                         mutation_param=mutation_param, **individual_params)
 
+        assert self.min_depth <= self.init_max_depth and self.min_depth <= self.max_depth, 'The init_max_depth or max_depth is not large enough for the given restrictions. These values must be at least '+str(self.min_depth)
+
         # This is the best individual based
         # on validation error.
         self.best_individual = (float('inf'), None)
@@ -156,7 +158,16 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
         # create one random individual with age 0 and initial max depth of d
         individuals_created = 0
         d = self.rng.randint(1, 3)
+
+        # Make sure d is at least as large as self.min_depth
         d = max(d, self.min_depth)
+
+        # Make sure that d is at most self.max_depth
+        # Note that assertion in constructor means that
+        # this line will not undo the work of the previous
+        # line.
+        d = min(d, self.max_depth)
+
         newborns = [self.Individual(self.rng, self.P, self.T,
                                     num_vars=self.num_vars, age=0, depth=d, max_depth=self.max_depth,
                                     **self.params)]
@@ -316,7 +327,7 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
 
         # Save generational data
         df = pd.DataFrame(info)
-        df.to_csv(output_path + output_file, index=None, header=header)
+        df.to_csv(os.path.join(output_path, output_file), index=None, header=header)
 
         # Save additional data for the last generation.
         self.save_final_error(os.path.join(output_path, 'fitness_data_rep'+str(rep)+'_final'))
