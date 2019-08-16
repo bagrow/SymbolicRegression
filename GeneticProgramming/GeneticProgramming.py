@@ -55,6 +55,7 @@ class GeneticProgramming:
         """
 
         self.max_depth = max_depth
+        self.init_max_depth = init_max_depth
         self.pop_size = pop_size
         self.P = primitive_set
         self.T = terminal_set
@@ -70,7 +71,7 @@ class GeneticProgramming:
 
         self.non_dominated_front = {}
 
-        self.pop = self.generate_population_ramped_half_and_half(self.pop_size, init_max_depth)
+        self.pop = self.generate_population_ramped_half_and_half(self.pop_size, self.init_max_depth)
 
         # mutation parameter stuff
         if self.mutation_param == 7:

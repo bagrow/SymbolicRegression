@@ -86,6 +86,10 @@ class GeneticProgrammingAfpo(GeneticProgramming):
         # create one random individual with age 0 and initial max depth of d
         individuals_created = 0
         d = self.rng.randint(3, 6)
+
+        # Make sure that d is at most self.max_depth
+        d = min(d, self.max_depth)
+
         newborns = [self.Individual(self.rng, self.P, self.T,
                                     num_vars=self.num_vars, age=0, depth=d, max_depth=self.max_depth,
                                     **self.params)]
