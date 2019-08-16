@@ -61,6 +61,8 @@ parser.add_argument('--cmaes', help='Use cma-es', action='store_true')
 parser.add_argument('--nes', help='Use natrual es', action='store_true')
 parser.add_argument('-nr', '--no_restrictions', help='Do not use restriction (partial fills).',
                     action='store_true')
+parser.add_argument('-bnr', '--bias_node_with_restrictions', help='Use the restriction but also put a bias not in the input layer of the neural network.',
+                    action='store_true')
 
 # General Settings
 parser.add_argument('-t', '--timeout', help='Number of seconds after which to stop.',
@@ -169,6 +171,7 @@ params['D'] = args.depth if args.function_builder or args.change_gp_max_depth el
 params['M'] = args.multiple_networks
 params['H'] = args.hidden[0] if args.hidden is not None else 0
 params['RGP'] = args.restricted_gp
+params['BNR'] = args.bias_node_with_restrictions
 params['NR'] = args.no_restrictions
 params['T'] = args.timeout
 params['NPF'] = args.num_partial_fills
@@ -321,7 +324,8 @@ if args.function_builder:
                             use_cmaes=args.cmaes, use_nes=args.nes, hidden=args.hidden,
                             num_partial_fills=args.num_partial_fills, base_path=base_path,
                             timeout=timeout, function_evals=args.function_evals,
-                            no_restrictions=args.no_restrictions)
+                            no_restrictions=args.no_restrictions,
+                            bias_node_with_restrictions=args.bias_node_with_restrictions)
 else:
 
     if args.restricted_gp:

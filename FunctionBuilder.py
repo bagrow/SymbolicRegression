@@ -94,7 +94,9 @@ def partially_fill_tree(pfill, ind):
     return order
 
 
-def get_network_input(tree, location, primitives, terminals, use_multiple_networks, no_restrictions):
+def get_network_input(tree, location, primitives, terminals,
+                      use_multiple_networks, no_restrictions,
+                      bias_node_with_restrictions):
     """Get the input vector for the neural
     network.
 
@@ -117,6 +119,12 @@ def get_network_input(tree, location, primitives, terminals, use_multiple_networ
     no_restrictions : bool
         If true, put a bias neuron in the returned
         vector.
+    bias_node_with_restrictions : bool
+        This agument conflicts with no_restrictions=True since this argument
+        assumes that their are restrictions. If True, a bias neuron will be placed
+        in the input layer of the neural network just like if setting no_restrictions
+        True, but all restrictions will still be applied. This arugment is used
+        to test if added a bias neuron as any effect on its own.
 
     Returns
     -------
@@ -152,7 +160,7 @@ def get_network_input(tree, location, primitives, terminals, use_multiple_networ
             depth = len(location)
             child = int(''.join(map(str, location)), 2)
 
-        if no_restrictions:
+        if no_restrictions or bias_node_with_restrictions:
             x = [1., depth, child]
 
         else:
@@ -163,10 +171,16 @@ def get_network_input(tree, location, primitives, terminals, use_multiple_networ
         # Get one of the labels to input.
         x_label = vertex_dict[loc]
 
-        # We don't need the label
-        # at location, so skip.
+        # If the loc is the same as
+        # the node to be labelled.
         if loc == location:
 
+            # We don't need the label
+            # at location, so skip.
+            # This is because each network
+            # labels a particular node so
+            # the order of inputs in not
+            # important.
             if use_multiple_networks:
                 continue
 
@@ -203,7 +217,8 @@ def get_network_input(tree, location, primitives, terminals, use_multiple_networ
 
 
 def label_node(tree, W, weight_dims, primitives, terminals, possible_output_labels,
-               location, bookmark, constant, use_multiple_networks, hidden, no_restrictions):
+               location, bookmark, constant, use_multiple_networks, hidden,
+               no_restrictions, bias_node_with_restrictions):
     """Label a single node.
 
     Parameters
@@ -240,6 +255,12 @@ def label_node(tree, W, weight_dims, primitives, terminals, possible_output_labe
         specifies the number of nodes in that layer.
     no_restrictions : bool
         If true, use a bias neuron in the neural network.
+    bias_node_with_restrictions : bool
+        This agument conflicts with no_restrictions=True since this argument
+        assumes that their are restrictions. If True, a bias neuron will be placed
+        in the input layer of the neural network just like if setting no_restrictions
+        True, but all restrictions will still be applied. This arugment is used
+        to test if added a bias neuron as any effect on its own.
     """
 
     if use_multiple_networks:
@@ -279,7 +300,9 @@ def label_node(tree, W, weight_dims, primitives, terminals, possible_output_labe
     # Get the input to the network
     # x_label = tree.select_subtree(child_indices=GP.Tree.get_parent(location))[0]
     # x = get_one_hot_encoding(x_label, possible_input_labels)
-    x = get_network_input(tree, location, primitives, terminals, use_multiple_networks, no_restrictions)
+    x = get_network_input(tree, location, primitives, terminals,
+                          use_multiple_networks, no_restrictions,
+                          bias_node_with_restrictions)
 
     # Get the output of the network.
     if hidden is not None:
@@ -355,7 +378,8 @@ def label_node(tree, W, weight_dims, primitives, terminals, possible_output_labe
 
 
 def label_tree(rng, pfill, W, depth, primitives, terminals,
-               use_multiple_networks, hidden, no_restrictions=False):
+               use_multiple_networks, hidden, no_restrictions=False,
+               bias_node_with_restrictions=False):
     """Given the some existing labels (pfill),
     the depth of the full tree, and the weights of
     a neural network, label the remainder of the tree.
@@ -384,6 +408,12 @@ def label_tree(rng, pfill, W, depth, primitives, terminals,
         are no partial fills (restrictions). Also,
         pass this to label_node so it can use a bias
         neuron.
+    bias_node_with_restrictions : bool (default=False)
+        This agument conflicts with no_restrictions=True since this argument
+        assumes that their are restrictions. If True, a bias neuron will be placed
+        in the input layer of the neural network just like if setting no_restrictions
+        True, but all restrictions will still be applied. This arugment is used
+        to test if added a bias neuron as any effect on its own.
 
     Returns
     -------
@@ -439,7 +469,7 @@ def label_tree(rng, pfill, W, depth, primitives, terminals,
         # If not using any partial fills,
         # count the bias neuron in input
         # layer.
-        if no_restrictions:
+        if no_restrictions or bias_node_with_restrictions:
             num_inputs += 1
 
     # Now, fill the remainder of the tree
@@ -466,7 +496,8 @@ def label_tree(rng, pfill, W, depth, primitives, terminals,
                                        bookmark=bookmark, constant=constant,
                                        use_multiple_networks=use_multiple_networks,
                                        hidden=hidden,
-                                       no_restrictions=no_restrictions)
+                                       no_restrictions=no_restrictions,
+                                       bias_node_with_restrictions=bias_node_with_restrictions)
 
         # if terminal
         else:
@@ -486,7 +517,8 @@ def label_tree(rng, pfill, W, depth, primitives, terminals,
                                        bookmark=bookmark, constant=constant,
                                        use_multiple_networks=use_multiple_networks,
                                        hidden=hidden,
-                                       no_restrictions=no_restrictions)
+                                       no_restrictions=no_restrictions,
+                                       bias_node_with_restrictions=bias_node_with_restrictions)
 
     return ind
 
@@ -577,7 +609,8 @@ def get_partial_fills(rng, primitives, terminals, locations, num_fills):
 
 
 def f(W, rng, dataset, depth, primitives, terminals, locations,
-      use_multiple_networks, hidden, num_fills, no_restrictions):
+      use_multiple_networks, hidden, num_fills, no_restrictions,
+      bias_node_with_restrictions):
     """For num_fills partial fills label a tree using
     weights W. Get the average of the errors of these trees
     and return it. Also, keep track of the best individual
@@ -621,6 +654,12 @@ def f(W, rng, dataset, depth, primitives, terminals, locations,
         pass this argument along to give the nn a
         bias neuron to give the network control over
         the labeling of the root node.
+    bias_node_with_restrictions : bool
+        This agument conflicts with no_restrictions=True since this argument
+        assumes that their are restrictions. If True, a bias neuron will be placed
+        in the input layer of the neural network just like if setting no_restrictions
+        True, but all restrictions will still be applied. This arugment is used
+        to test if added a bias neuron as any effect on its own.
 
     Returns
     -------
@@ -640,7 +679,7 @@ def f(W, rng, dataset, depth, primitives, terminals, locations,
     if no_restrictions:
 
         i = label_tree(rng, None, W, depth, primitives, terminals,
-                       use_multiple_networks, hidden, no_restrictions)
+                       use_multiple_networks, hidden, no_restrictions=no_restrictions)
 
         i.evaluate_fitness(dataset, compute_val_error=True)
 
@@ -656,7 +695,8 @@ def f(W, rng, dataset, depth, primitives, terminals, locations,
         for pfill in pfills:
 
             i = label_tree(rng, pfill, W, depth, primitives, terminals,
-                           use_multiple_networks, hidden)
+                           use_multiple_networks, hidden,
+                           bias_node_with_restrictions=bias_node_with_restrictions)
 
             i.evaluate_fitness(dataset, compute_val_error=True)
 
@@ -679,7 +719,7 @@ def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
                          rep, multiple_networks, use_cmaes, use_nes, hidden,
                          num_partial_fills, base_path, timeout=float('inf'),
                          function_evals=float('inf'),
-                         no_restrictions=False):
+                         no_restrictions=False, bias_node_with_restrictions=False):
 
     """Given all the parameters, run function builder.
 
@@ -733,7 +773,15 @@ def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
         to handle these alterations. If will also effect the number of
         weights, which are calculated below. This argument overrules
         num_partial_fills.
+    bias_node_with_restrictions : bool
+        This agument conflicts with no_restrictions=True since this argument
+        assumes that their are restrictions. If True, a bias neuron will be placed
+        in the input layer of the neural network just like if setting no_restrictions
+        True, but all restrictions will still be applied. This arugment is used
+        to test if added a bias neuron as any effect on its own.
     """
+
+    assert not (no_restrictions and bias_node_with_restrictions), 'Cannot use bias_node_with_restrictions (bnr) and no_restrictions (nr) at the same time.'
 
     seed = rep + 1
     rng = np.random.RandomState(seed)
@@ -755,7 +803,7 @@ def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
 
         num_extra_inputs = 2
 
-        if no_restrictions:
+        if no_restrictions or bias_node_with_restrictions:
             num_extra_inputs += 1
 
         if hidden is None:
@@ -781,7 +829,8 @@ def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
         xopt, es = cma.fmin2(f, rng.randn(number_of_weights), 0.1,
                              args=(rng, dataset, depth, primitives, terminals,
                                    locations, multiple_networks, hidden,
-                                   num_partial_fills, no_restrictions),
+                                   num_partial_fills, no_restrictions,
+                                   bias_node_with_restrictions),
                              options={'maxfevals': function_evals,
                                       'ftarget': 1e-10,
                                       'seed': seed,
@@ -796,7 +845,8 @@ def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
                    args=(rng, dataset, depth, primitives,
                          terminals, locations,
                          multiple_networks, hidden,
-                         num_partial_fills, no_restrictions),
+                         num_partial_fills, no_restrictions,
+                         bias_node_with_restrictions),
                    max_evals=function_evals,
                    seed=seed,
                    timeout=timeout,
@@ -811,7 +861,7 @@ def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
     if no_restrictions:
 
         i = label_tree(rng, None, xopt, depth, primitives, terminals,
-                       multiple_networks, hidden, no_restrictions)
+                       multiple_networks, hidden, no_restrictions, bias_node_with_restrictions)
 
         i.evaluate_fitness(dataset, compute_val_error=True)
 
@@ -837,7 +887,9 @@ def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
         # or possibly be testing set of pfills.
         for pfill in [{(): '*'}, {(): '%'}, {(): '+'}, {(): '-'}, {(): 'id2'}, {(): 'sin2'}]:
 
-            i = label_tree(rng, pfill, xopt, depth, primitives, terminals, multiple_networks, hidden)
+            i = label_tree(rng, pfill, xopt, depth, primitives, terminals,
+                           multiple_networks, hidden,
+                           bias_node_with_restrictions=bias_node_with_restrictions)
 
             i.evaluate_fitness(dataset, compute_val_error=True)
 
@@ -885,6 +937,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--cmaes', help='Use cma-es', action='store_true')
     parser.add_argument('--nes', help='Use natrual es', action='store_true')
+
 
 
     args = parser.parse_args()
