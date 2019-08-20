@@ -149,8 +149,15 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
 
         # keep track of best individual
         for p in self.pop:
+
             if p.validation_fitness < self.best_individual[0]:
+
                 self.best_individual = (p.validation_fitness, p)
+
+            elif p.validation_fitness == self.best_individual[1].get_tree_size():
+
+                if p.get_tree_size() < self.best_individual[1].get_tree_size():
+                    self.best_individual = (p.validation_fitness, p)
 
         xover_parents = self.rng.choice(self.pop, size=(num_xover, 2))
         mut_parents = self.rng.choice(self.pop, size=num_mut)
@@ -333,7 +340,6 @@ class GeneticProgrammingRestricted(GeneticProgrammingAfpo):
         self.save_final_error(os.path.join(output_path, 'fitness_data_rep'+str(rep)+'_final'))
 
         # Save best individual based on validation error
-
         lisp = self.best_individual[1].get_lisp_string(actual_lisp=True)
 
         self.best_individual[1].evaluate_test_points(self.test_data)
