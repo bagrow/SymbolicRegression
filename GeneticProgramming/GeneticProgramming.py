@@ -389,8 +389,15 @@ class GeneticProgramming:
 
         # keep track of best individual
         for p in self.pop:
+
             if p.validation_fitness < self.best_individual[0]:
+
                 self.best_individual = (p.validation_fitness, p)
+
+            elif p.validation_fitness == self.best_individual[1].get_tree_size():
+
+                if p.get_tree_size() < self.best_individual[1].get_tree_size():
+                    self.best_individual = (p.validation_fitness, p)
 
         # Make a dictionary of front individuals. Keep key as index.
         self.get_non_dominated_front()
