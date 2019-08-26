@@ -76,6 +76,9 @@ class Individual(Tree):
             if self.params['AFSPO']:
                 self.fitness = np.zeros(3)
 
+        if not hasattr(self.params, 'IA'):
+            self.params['IA'] = False
+
         # fitness (that does not effect other fitness)
         # during symbolic regression
         self.validation_fitness = 0
