@@ -550,6 +550,12 @@ def get_partial_fills(rng, primitives, terminals, locations, num_fills):
     """
 
     pfills = [{(): p} for p in primitives]
+    # pfills = [{(): '*'},
+    #           {(): '*', (0,): 'id2'},
+    #           {(): '*', (0,): 'id2', (1,): 'id2'},
+    #           {(): '*', (0,): 'id2', (1,): 'id2', (0, 0): '+'},
+    #           {(): '*', (0,): 'id2', (1,): 'id2', (0, 0): '+', (0, 1): '+'},
+    #           {(): '*', (0,): 'id2', (1,): 'id2', (0, 0): '+', (0, 1): '+', (0, 0, 0): 'x0'}]
 
     # This will happen if depth = 1
     if len(locations) == 0:
@@ -570,7 +576,7 @@ def get_partial_fills(rng, primitives, terminals, locations, num_fills):
     if '#f' in sub_terminals:
         sub_terminals.remove('#f')
 
-    for _ in range(num_fills-len(primitives)):
+    while num_fills > len(primitives):
 
         k = rng.choice(range(1, n))
 
@@ -719,7 +725,8 @@ def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
                          rep, multiple_networks, use_cmaes, use_nes, hidden,
                          num_partial_fills, base_path, timeout=float('inf'),
                          function_evals=float('inf'),
-                         no_restrictions=False, bias_node_with_restrictions=False):
+                         no_restrictions=False, bias_node_with_restrictions=False,
+                         sigma=0.1):
 
     """Given all the parameters, run function builder.
 
@@ -824,24 +831,33 @@ def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
     # best = (error, weights)
     best = (float('inf'), None)
 
+    # weights = np.zeros(number_of_weights)
+    # indices = rng.choice(number_of_weights, size=number_of_weights//2)
+    # nonzero_weights = rng.uniform(-1, 1, size=number_of_weights//2)
+    # weights[indices] = nonzero_weights
+    weights = rng.uniform(-1, 1, size=number_of_weights)
+
     if use_cmaes:
 
-        xopt, es = cma.fmin2(f, rng.randn(number_of_weights), 0.1,
+        xopt, es = cma.fmin2(f, weights, sigma,
                              args=(rng, dataset, depth, primitives, terminals,
                                    locations, multiple_networks, hidden,
                                    num_partial_fills, no_restrictions,
                                    bias_node_with_restrictions),
                              options={'maxfevals': function_evals,
-                                      'ftarget': 1e-10,
+                                      # 'ftarget': 1e-10,
+                                      'tolfun': 0,
+                                      # 'tolfunhist': 0,
                                       'seed': seed,
                                       'verb_log': 0,
                                       'timeout': timeout},
                              restarts=0)
         print('popsize', es.popsize)
+        print(es.stop())
 
     elif use_nes:
 
-        xopt = nes(f, w=rng.randn(number_of_weights),
+        xopt = nes(f, w=weights,
                    args=(rng, dataset, depth, primitives,
                          terminals, locations,
                          multiple_networks, hidden,
@@ -904,12 +920,18 @@ def run_function_builder(primitives, terminals, depth, dataset, dataset_test,
             row = [lisp, i.fitness[0], i.validation_fitness, i.testing_fitness]
             function_builder_data.append(row)
 
-        df_function_builder = pd.DataFrame(function_builder_data)
-        df_function_builder.to_csv(os.path.join(base_path, 'function_builder_data'+filename_id+'.csv'), index=False,
-                                   header=['s-expression', 'Training Error', 'Validation Error', 'Testing Error'])
+        if base_path is not None:
 
-    df_weights = pd.DataFrame(xopt)
-    df_weights.to_csv(os.path.join(base_path, 'weights'+filename_id+'.csv'), index=False, header=None)
+            df_function_builder = pd.DataFrame(function_builder_data)
+            df_function_builder.to_csv(os.path.join(base_path, 'function_builder_data'+filename_id+'.csv'), index=False,
+                                       header=['s-expression', 'Training Error', 'Validation Error', 'Testing Error'])
+
+    if base_path is not None:
+
+        df_weights = pd.DataFrame(xopt)
+        df_weights.to_csv(os.path.join(base_path, 'weights'+filename_id+'.csv'), index=False, header=None)
+
+    return [x[3] for x in function_builder_data]
 
 
 if __name__ == '__main__':

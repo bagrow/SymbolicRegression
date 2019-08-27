@@ -16,6 +16,7 @@ import GeneticProgramming.common_functions as cf
 
 from get_computation import get_computation_time
 import FunctionBuilder as FB
+import NeuroEncodedExpressionProgramming as NEEP
 
 import cma
 import numpy as np
@@ -64,6 +65,14 @@ parser.add_argument('-nr', '--no_restrictions', help='Do not use restriction (pa
 parser.add_argument('-bnr', '--bias_node_with_restrictions', help='Use the restriction but also put a bias not in the input layer of the neural network.',
                     action='store_true')
 
+# Neuro-Encoded Expression Programming
+parser.add_argument('-neep', '--neuro_encoded_expression_programming',
+                    help='Use NEEP', action='store_true')
+parser.add_argument('-hs', '--head_size', help='Number of elements in the head of the gene.',
+                    type=int, default=30)
+parser.add_argument('-ts', '--num_time_steps', help='The number of time steps.',
+                    type=int, default=10)
+
 # General Settings
 parser.add_argument('-t', '--timeout', help='Number of seconds after which to stop.',
                     action='store', type=float, default=float('inf'))
@@ -103,7 +112,12 @@ noise_std = 0.1
 # --------------------------------------------------------- #
 
 # initialize and run gp
-primitive_set = ['+', '*', '-', '%', 'sin2', 'id2']
+if args.neuro_encoded_expression_programming:
+    primitive_set = ['+', '*', '-', '%']
+
+else:
+    primitive_set = ['+', '*', '-', '%', 'sin2', 'id2']
+
 terminal_set = ['#x', '#f']
 
 
@@ -170,6 +184,8 @@ params['NES'] = args.nes
 params['D'] = args.depth if args.function_builder or args.change_gp_max_depth else 0
 params['M'] = args.multiple_networks
 params['H'] = args.hidden[0] if args.hidden is not None else 0
+params['NEEP'] = args.neuro_encoded_expression_programming
+params['HS'] = args.head_size
 params['RGP'] = args.restricted_gp
 params['BNR'] = args.bias_node_with_restrictions
 params['NR'] = args.no_restrictions
@@ -194,7 +210,7 @@ else:
 
 rng = np.random.RandomState(exp)
 
-if args.func in ('test', 'linear', 'quadratic-1', 'quadratic-2', 'quadratic-3', 'quadratic-4'):
+if args.func in ('test', 'linear', 'quadratic-1', 'quadratic-2', 'quadratic-3', 'quadratic-4', 'constant-1'):
 
     num_data_points = 200*100
 
@@ -212,6 +228,9 @@ if args.func in ('test', 'linear', 'quadratic-1', 'quadratic-2', 'quadratic-3', 
 
     elif args.func == 'quadratic-4':
         target = lambda x: 0.5*x[0]**2 + np.sqrt(2)*x[0] - 1.
+
+    elif args.func == 'constant-1':
+        target = lambda x: 1.23456789 +0*x[0]
 
     X1 = np.linspace(-1, 1, num_data_points)
     X2 = np.linspace(-20, 3, num_data_points)
@@ -326,6 +345,19 @@ if args.function_builder:
                             timeout=timeout, function_evals=args.function_evals,
                             no_restrictions=args.no_restrictions,
                             bias_node_with_restrictions=args.bias_node_with_restrictions)
+
+elif args.neuro_encoded_expression_programming:
+
+    terminal_set = terminal_set_expanded
+
+    NEEP.run_neuro_encoded_expression_programming(rep=args.rep, num_hidden=args.hidden[0],
+                                                  head_size=args.head_size, primitives=primitive_set,
+                                                  terminals=terminal_set, dataset=dataset,
+                                                  dataset_test=dataset_test,
+                                                  timeout=timeout, function_evals=args.function_evals,
+                                                  base_path=base_path,
+                                                  num_time_steps=args.num_time_steps)
+
 else:
 
     if args.restricted_gp:
