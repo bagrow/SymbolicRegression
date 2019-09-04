@@ -80,6 +80,8 @@ parser.add_argument('-fe', '--function_evals', help='Maximum number of function 
                     type=float, action='store', default=float('inf'))
 parser.add_argument('-npf', '--num_partial_fills', help='The number of partial fills to use in each evaluation',
                     action='store', type=int, default=6)
+parser.add_argument('-s', '--sigma', help='Parameters for CMA-ES',
+                    action='store', type=float, default=1)
 
 args = parser.parse_args()
 
@@ -344,7 +346,8 @@ if args.function_builder:
                             num_partial_fills=args.num_partial_fills, base_path=base_path,
                             timeout=timeout, function_evals=args.function_evals,
                             no_restrictions=args.no_restrictions,
-                            bias_node_with_restrictions=args.bias_node_with_restrictions)
+                            bias_node_with_restrictions=args.bias_node_with_restrictions,
+                            sigma=args.sigma)
 
 elif args.neuro_encoded_expression_programming:
 
@@ -356,7 +359,8 @@ elif args.neuro_encoded_expression_programming:
                                                   dataset_test=dataset_test,
                                                   timeout=timeout, function_evals=args.function_evals,
                                                   base_path=base_path,
-                                                  num_time_steps=args.num_time_steps)
+                                                  num_time_steps=args.num_time_steps,
+                                                  sigma=args.sigma)
 
 else:
 
