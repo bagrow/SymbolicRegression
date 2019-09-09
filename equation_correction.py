@@ -164,7 +164,6 @@ def run_equation_corrector(function_string, dataset, w, hidden_values, hidden_we
                                                                        signed_error, hidden_values,
                                                                        hidden_weights, activation,
                                                                        adjustment, constant)
-        # print('error', error, 'signed_error', signed_error, 'constant', constant)
 
     return error, constant
 
@@ -175,11 +174,9 @@ def cma_es_function(w, rng, depth, hidden_values, hidden_weights, activation, ad
 
     errors = []
 
-    for function_string in datasets:
+    for function_string, dataset in datasets:
 
         constant = 0
-        
-        dataset = datasets[function_string]
 
         error, constant = run_equation_corrector(function_string, dataset, w, hidden_values, hidden_weights,
                                                  activation, adjustment, constant, num_iterations)
@@ -261,9 +258,8 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
 
     Returns
     -------
-    datasets : dict
-        Dictionary with key=base function and
-        value=dataset.
+    datasets : list
+        List of tuple containnig (base_function, dataset).
     """
 
     primitives = ['*', '+', '%', '-']
@@ -276,7 +272,7 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
     targets = [GP.Individual(rng=rng, primitive_set=primitives, terminal_set=terminals, num_vars=num_vars,
                              depth=depth, method='grow') for _ in range(num_targets)]
 
-    datasets = {}
+    datasets = []
 
     for t in targets:
 
@@ -293,17 +289,32 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
 
             # Make inputs
             x = np.array([rng.uniform(-1, 1, size=100) for _ in range(num_vars)]).T
-            # print('x', x)
-            # print('function(x.T)', np.array([function(x.T)]).T)
-            dataset = np.hstack((np.array([function(x.T)]).T, x))
-            # print(dataset)
 
-            datasets[base_function_string] = dataset
+            dataset = np.hstack((np.array([function(x.T)]).T, x))
+
+            datasets.append((base_function_string, dataset))
+            # datasets[base_function_string] = dataset
 
     return datasets
 
 
 if __name__ == '__main__':
+
+    # num_targets = 1
+    # num_base_function_per_target = 3
+    # datasets =get_data_for_equation_corrector(rng=np.random.RandomState(0),
+    #                                           num_targets=num_targets,
+    #                                           num_base_function_per_target=num_base_function_per_target,
+    #                                           depth=3)
+
+    # if num_targets*num_base_function_per_target == len(datasets):
+    #     print('Success!')
+
+    # else:
+    #     print('Failure!')
+
+    # exit()
+
 
     parser = argparse.ArgumentParser()
 
