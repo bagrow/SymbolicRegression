@@ -298,6 +298,38 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
     return datasets
 
 
+def equation_adjuster_from_file(filename):
+    """Read the data necessary to use eqution
+    adjuster from file. File is assume to be
+    saved as detailed in train_equation_adjuster().
+
+    Parameters
+    ----------
+    filename : str
+        Location of the file to read from.
+
+    Returns
+    -------
+    trained_weights : np.array
+        The weights for input layer and output
+        layer of nn. The array is flat.
+    untrained_weights : np.array
+        The weights for the hidden layer. This
+        array is also 1 dimensional.
+    initial_hidden_values : np.array
+        The values of the hidden neuron (initially).
+    """
+
+    # Remove nans
+    rm_nans = lambda x: x[~np.isnan(x)] 
+
+    data = pd.read_csv(filename).iloc[:, 2:].values
+
+    trained_weights, untrained_weights, initial_hidden_values = rm_nans(data[:, 0]), rm_nans(data[:, 1]), rm_nans(data[:, 2])
+
+    return trained_weights, untrained_weights, initial_hidden_values
+
+
 if __name__ == '__main__':
 
     # num_targets = 1
