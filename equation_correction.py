@@ -42,7 +42,7 @@ def get_value(u, v, w, input, hidden, activation):
     return output, hidden
 
 
-def evalutate_corrector_neural_network(w, signed_error, hidden_values, hidden_weights, activation):
+def evalutate_corrector_neural_network(w, signed_error, hidden_values, hidden_weights, activation, horizontal=False):
     """Evaluate neural network that decides how to change the function.
 
     Parameters
@@ -77,7 +77,13 @@ def evalutate_corrector_neural_network(w, signed_error, hidden_values, hidden_we
     # Get the output weights. Output is one of three nodes.
     w = w[num_hidden:].reshape((num_hidden, 3))
 
-    output, new_hidden_value = get_value(u, v, w, [signed_error], hidden_values, activation)
+    if horizontal:
+        input = error
+
+    else:
+        input = signed_error
+
+    output, new_hidden_value = get_value(u, v, w, [input], hidden_values, activation)
 
     index = np.argmax(output)
 
@@ -150,15 +156,25 @@ def update_equation(function_string, dataset, w, signed_error, hidden_values, hi
 
 
 def run_equation_corrector(function_string, dataset, w, hidden_values, hidden_weights, activation,
-                           adjustment, constant=0, num_iterations=5):
+                           adjustment, constant=0, num_iterations=5, horizontal=False):
 
     # init signed error
     x = dataset[:, 1:]
     y = dataset[:, 0]
-    f = eval('lambda x: '+function_string+'+'+str(constant))
+
+    if horizontal:
+        f = eval('lambda x: '+function_string.replace('x[0]', '(x[0]+'+str(constant)+')'))
+
+    else:
+        f = eval('lambda x: '+function_string+'+'+str(constant))
+
     signed_error = np.mean(y-f(x.T))
 
+    step = adjustment/num_iterations
+
     for _ in range(num_iterations):
+
+        adjustment -= step
 
         error, signed_error, hidden_values, constant = update_equation(function_string, dataset, w,
                                                                        signed_error, hidden_values,
@@ -169,7 +185,7 @@ def run_equation_corrector(function_string, dataset, w, hidden_values, hidden_we
 
 
 def cma_es_function(w, rng, depth, hidden_values, hidden_weights, activation, adjustment,
-                    num_iterations, datasets, return_all_errors=False):
+                    num_iterations, datasets, return_all_errors=False, horizontal=False):
     """Function that is passed to CMA-ES."""
 
     errors = []
@@ -179,7 +195,7 @@ def cma_es_function(w, rng, depth, hidden_values, hidden_weights, activation, ad
         constant = 0
 
         error, constant = run_equation_corrector(function_string, dataset, w, hidden_values, hidden_weights,
-                                                 activation, adjustment, constant, num_iterations)
+                                                 activation, adjustment, constant, num_iterations, horizontal)
 
         errors.append(error)
     
@@ -190,7 +206,7 @@ def cma_es_function(w, rng, depth, hidden_values, hidden_weights, activation, ad
         return np.mean(errors)
 
 
-def train_equation_corrector(rng, save_loc):
+def train_equation_corrector(rng, save_loc, horizontal):
 
     hidden_values = rng.uniform(-1, 1, size=10)
     hidden_weights = rng.uniform(-1, 1, size=(len(hidden_values), len(hidden_values)))
@@ -211,12 +227,17 @@ def train_equation_corrector(rng, save_loc):
     timeout = 360
     num_iterations = 50
 
-    datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth)
-    datasets_test = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth)
+    return_all_errors = False
+
+    max_offset = sum([1-k/num_iterations for k in range(num_iterations)])
+    # max_offset = 5
+
+    datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_offset, horizontal)
+    datasets_test = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_offset, horizontal)
 
     xopt, es = cma.fmin2(cma_es_function, weights, sigma,
                      args=(rng, depth, hidden_values, hidden_weights, activation, adjustment,
-                           num_iterations, datasets),
+                           num_iterations, datasets, return_all_errors, horizontal),
                      options={'maxfevals': function_evals,
                               # 'ftarget': 1e-10,
                               'tolfun': 0,
@@ -227,19 +248,22 @@ def train_equation_corrector(rng, save_loc):
                      restarts=0)
 
     test_errors = cma_es_function(xopt, rng, depth, hidden_values, hidden_weights, activation, adjustment,
-                                 num_iterations, datasets, return_all_errors=True)
+                                 num_iterations, datasets, return_all_errors=True, horizontal=horizontal)
 
     # save the best individual
     # ['test error', 'trained weights', 'untrained weights', 'initial hidden values']
-    data = [[test_errors], xopt, hidden_weights.flatten(), hidden_values]
+    data = [test_errors, xopt, hidden_weights.flatten(), hidden_values]
     df = pd.DataFrame(data).transpose()
     df.to_csv(save_loc, header=['test error', 'trained weights', 'untrained weights', 'initial hidden values'])
 
     plt.hist(test_errors)
-    plt.show()
+    plt.ylabel('Frequency')
+    plt.xlabel('Test Error')
+    plt.savefig(os.path.join(os.path.dirname(save_loc), 'hist_final_errors_rep'+str(rep)+'.pdf'))
 
 
-def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth):
+def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target,
+                                    depth, max_offset=50, horizontal=False):
     """Generate a dataset for multiple functions. Keep track of
     the base function(s) connected with the dataset.
 
@@ -276,14 +300,19 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
 
     for t in targets:
 
-        offset = rng.choice(list(range(-40, 40)), size=num_base_function_per_target)
+        offset = rng.uniform(-max_offset, max_offset, size=num_base_function_per_target)
 
         base_file = os.path.join(os.environ['GP_DATA'], 'tree')
         
         for o in offset:
 
             base_function_string = t.convert_lisp_to_standard_for_function_creation()
-            function_string = base_function_string+'+'+str(o)
+
+            if horizontal:
+                function_string = base_function_string.replace('x[0]', '(x[0]+'+str(o)+')')
+
+            else:
+                function_string = base_function_string+'+'+str(o)
 
             function = eval('lambda x: '+function_string)
 
@@ -357,9 +386,9 @@ if __name__ == '__main__':
 
     rng = np.random.RandomState(args.rep)
 
-    save_loc = os.path.join(os.environ['GP_DATA'], 'function_builder', 'equation_adjuster', 'best_ind_rep'+str(args.rep)+'.csv')
+    save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'best_ind_rep'+str(args.rep)+'.csv')
 
-    train_equation_corrector(rng, save_loc)
+    train_equation_corrector(rng, save_loc, horizontal=False)
 
     # signed_error = 1
     # hidden_values = rng.uniform(-1, 1, size=10)

@@ -5,40 +5,47 @@ import numpy as np
 
 import os
 
-filename = '/Users/rgrindle/GP_DATA/equation_adjuster/best_ind_rep0.csv'
+def plot_nn_behavior(rep):
 
-w, hidden_weights, hidden_values = ec.equation_adjuster_from_file(filename)
+    filename = '/Users/rgrindle/GP_DATA/equation_adjuster/best_ind_rep'+str(rep)+'.csv'
 
-hidden_weights = hidden_weights.reshape((len(hidden_values), len(hidden_values)))
+    w, hidden_weights, hidden_values = ec.equation_adjuster_from_file(filename)
 
-# datasets = ec.get_data_for_equation_corrector(rng=np.random.RandomState(0), num_targets=1,
-#                                               num_base_function_per_target=1, depth=3):
+    hidden_weights = hidden_weights.reshape((len(hidden_values), len(hidden_values)))
 
-# for function_string, dataset in datasets:
+    # datasets = ec.get_data_for_equation_corrector(rng=np.random.RandomState(0), num_targets=1,
+    #                                               num_base_function_per_target=1, depth=3):
 
-    # ec.run_equation_corrector(function_string, dataset, w, hidden_values, hidden_weights, activation=np.tanh,
-    #                           adjustment=1, constant=0, num_iterations=5)
+    # for function_string, dataset in datasets:
 
-rng = np.random.RandomState(0)
+        # ec.run_equation_corrector(function_string, dataset, w, hidden_values, hidden_weights, activation=np.tanh,
+        #                           adjustment=1, constant=0, num_iterations=5)
 
-data = []
+    rng = np.random.RandomState(0)
 
-for signed_error in list(rng.uniform(-5, 5, size=50)) + [0.]:
+    data = []
 
-    index, hidden_value = ec.evalutate_corrector_neural_network(w, signed_error, hidden_values,
-                                                                hidden_weights, activation=np.tanh)
+    for signed_error in list(rng.uniform(-5, 5, size=50)) + [0.]:
 
-    data.append((signed_error, index))
+        index, hidden_value = ec.evalutate_corrector_neural_network(w, signed_error, hidden_values,
+                                                                    hidden_weights, activation=np.tanh)
 
-data = np.array(data)
+        data.append((signed_error, index))
 
-error = data[:, 0]
-index = data[:, 1]
+    data = np.array(data)
 
-plt.plot(error, index, 'o')
-plt.yticks([0, 1, 2], ['Positive', 'Negative', 'Zero'])
-plt.xlabel('Signed Error (input)')
-# plt.ylabel('Index (output)')
+    error = data[:, 0]
+    index = data[:, 1]
 
-plt.tight_layout()
-plt.savefig(os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'figures', 'weights.pdf'))
+    plt.plot(error, index, 'o')
+    plt.yticks([0, 1, 2], ['Positive', 'Negative', 'Zero'])
+    plt.xlabel('Signed Error (input)')
+    # plt.ylabel('Index (output)')
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'figures', 'weights_rep'+str(rep)+'.pdf'))
+
+
+if __name__ == '__main__':
+
+    plot_nn_behavior(0)
