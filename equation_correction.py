@@ -42,7 +42,8 @@ def get_value(u, v, w, input, hidden, activation):
     return output, hidden
 
 
-def evalutate_corrector_neural_network(w, signed_error, hidden_values, hidden_weights, activation, horizontal=False):
+def evaluate_corrector_neural_network(w, error, signed_error, prev_error, prev_index, hidden_values, hidden_weights,
+                                      activation, horizontal=False):
     """Evaluate neural network that decides how to change the function.
 
     Parameters
@@ -68,30 +69,30 @@ def evalutate_corrector_neural_network(w, signed_error, hidden_values, hidden_we
 
     num_hidden = len(hidden_values)
 
+    if horizontal:
+        input = [prev_error, error, *np.eye(3)[int(prev_index)]]
+
+    else:
+        input = [signed_error]
+
     # Take one node for the signed error.
-    u = w[:num_hidden].reshape(1, num_hidden)
+    u = w[:num_hidden*len(input)].reshape((len(input), num_hidden))
 
     # Get recurrent weights
     v = hidden_weights
 
     # Get the output weights. Output is one of three nodes.
-    w = w[num_hidden:].reshape((num_hidden, 3))
+    w = w[num_hidden*len(input):].reshape((num_hidden, 3))
 
-    if horizontal:
-        input = error
-
-    else:
-        input = signed_error
-
-    output, new_hidden_value = get_value(u, v, w, [input], hidden_values, activation)
+    output, new_hidden_value = get_value(u, v, w, input, hidden_values, activation)
 
     index = np.argmax(output)
 
     return index, new_hidden_value
 
 
-def update_equation(function_string, dataset, w, signed_error, hidden_values, hidden_weights,
-                    activation, adjustment, constant):
+def update_equation(function_string, dataset, w, error, signed_error, prev_error, prev_index, hidden_values, hidden_weights,
+                    activation, adjustment, constant, horizontal):
     """
 
     Parameters
@@ -124,21 +125,18 @@ def update_equation(function_string, dataset, w, signed_error, hidden_values, hi
         The updated constant.
     """
 
-
-    index, hidden_values = evalutate_corrector_neural_network(w, signed_error, hidden_values, hidden_weights,
-                                                              activation)
+    index, hidden_values = evaluate_corrector_neural_network(w, error, signed_error, prev_error, prev_index,
+                                                             hidden_values, hidden_weights, activation,
+                                                             horizontal)
 
     if index == 0:
         new_constant = constant + adjustment
-        # print('+')
 
     elif index == 1:
         new_constant = constant - adjustment
-        # print('-')
 
     elif index == 2:
         new_constant = constant
-        # print('0')
 
     else:
         print('Unspecified option. index =', index)
@@ -152,7 +150,7 @@ def update_equation(function_string, dataset, w, signed_error, hidden_values, hi
     error = np.sqrt(np.mean(np.power(f(x.T)-y, 2)))
     signed_error = np.mean(y-f(x.T))
 
-    return error, signed_error, hidden_values, new_constant
+    return error, signed_error, index, hidden_values, new_constant
 
 
 def run_equation_corrector(function_string, dataset, w, hidden_values, hidden_weights, activation,
@@ -168,7 +166,11 @@ def run_equation_corrector(function_string, dataset, w, hidden_values, hidden_we
     else:
         f = eval('lambda x: '+function_string+'+'+str(constant))
 
+    errors = [np.sqrt(np.mean(np.power(f(x.T)-y, 2)))]
+    error = errors[0]
     signed_error = np.mean(y-f(x.T))
+    prev_error = errors[-1]
+    prev_index = 2.
 
     step = adjustment/num_iterations
 
@@ -176,47 +178,65 @@ def run_equation_corrector(function_string, dataset, w, hidden_values, hidden_we
 
         adjustment -= step
 
-        error, signed_error, hidden_values, constant = update_equation(function_string, dataset, w,
-                                                                       signed_error, hidden_values,
-                                                                       hidden_weights, activation,
-                                                                       adjustment, constant)
+        error, signed_error, prev_index, hidden_values, constant = update_equation(function_string, dataset, w,
+                                                                                   error/errors[0], signed_error/errors[0],
+                                                                                   prev_error/errors[0],
+                                                                                   prev_index, hidden_values,
+                                                                                   hidden_weights, activation,
+                                                                                   adjustment, constant, horizontal)
 
-    return error, constant
+        errors.append(error)
+
+        prev_error = errors[-2]
+
+    # normalized_errors = [e/errors[0] if errors[0] != 0 else e for e in errors[1:]]
+
+    # weights = [i/len(errors[1:]) for i in range(1, len(errors))]
+    # normalized_weights = np.array(weights)/sum(weights)
+
+    # fitness = np.average(normalized_errors, weights=normalized_weights)
+    fitness = error/errors[0]
+
+    return error, constant, fitness
 
 
 def cma_es_function(w, rng, depth, hidden_values, hidden_weights, activation, adjustment,
                     num_iterations, datasets, return_all_errors=False, horizontal=False):
     """Function that is passed to CMA-ES."""
 
+    fitnesses = []
     errors = []
 
     for function_string, dataset in datasets:
 
         constant = 0
 
-        error, constant = run_equation_corrector(function_string, dataset, w, hidden_values, hidden_weights,
-                                                 activation, adjustment, constant, num_iterations, horizontal)
+        error, constant, fitness = run_equation_corrector(function_string, dataset, w, hidden_values, hidden_weights,
+                                                          activation, adjustment, constant, num_iterations, horizontal)
 
+        fitnesses.append(fitness)
         errors.append(error)
-    
+
     if return_all_errors:
         return errors
 
     else:
-        return np.mean(errors)
+        return np.mean(fitnesses)
 
 
-def train_equation_corrector(rng, save_loc, horizontal):
+def train_equation_corrector(rng, rep, save_loc, horizontal):
 
-    hidden_values = rng.uniform(-1, 1, size=10)
+    hidden_values = rng.uniform(-1, 1, size=40)
     hidden_weights = rng.uniform(-1, 1, size=(len(hidden_values), len(hidden_values)))
     activation = np.tanh
+    num_input = 5 if horizontal else 1
+    num_output = 3
 
-    weights = rng.uniform(-1, 1, size=len(hidden_values)+len(hidden_values)*3)
+    weights = rng.uniform(-1, 1, size=num_input*len(hidden_values)+len(hidden_values)*num_output)
     adjustment = 1
     
     # get data
-    num_targets = 50
+    num_targets = 5
     num_base_function_per_target = 2
     depth = 3
 
@@ -229,11 +249,11 @@ def train_equation_corrector(rng, save_loc, horizontal):
 
     return_all_errors = False
 
-    max_offset = sum([1-k/num_iterations for k in range(num_iterations)])
-    # max_offset = 5
+    # max_offset = sum([1-k/num_iterations for k in range(num_iterations)])
+    max_offset = 5
 
     datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_offset, horizontal)
-    datasets_test = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_offset, horizontal)
+    datasets_test = get_data_for_equation_corrector(rng, num_targets+45, num_base_function_per_target, depth, max_offset, horizontal)
 
     xopt, es = cma.fmin2(cma_es_function, weights, sigma,
                      args=(rng, depth, hidden_values, hidden_weights, activation, adjustment,
@@ -291,7 +311,7 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
 
     # Pick the number of input variables
     # between 1 and 6.
-    num_vars = rng.choice(5)+1
+    num_vars = 1    #rng.choice(5)+1
 
     targets = [GP.Individual(rng=rng, primitive_set=primitives, terminal_set=terminals, num_vars=num_vars,
                              depth=depth, method='grow') for _ in range(num_targets)]
@@ -300,20 +320,27 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
 
     for t in targets:
 
-        offset = rng.uniform(-max_offset, max_offset, size=num_base_function_per_target)
+        while 'x0' not in t.get_lisp_string() and horizontal:
+            t = GP.Individual(rng=rng, primitive_set=primitives, terminal_set=terminals, num_vars=num_vars,
+                              depth=depth, method='grow')
+
+        offset = [0, 0]
+
+        while 0 in offset:
+            offset = rng.uniform(-max_offset, max_offset, size=num_base_function_per_target)
 
         base_file = os.path.join(os.environ['GP_DATA'], 'tree')
-        
+        print('target', num_targets)
         for o in offset:
-
+            print(o)
             base_function_string = t.convert_lisp_to_standard_for_function_creation()
-
+            print('base_function_string', base_function_string)
             if horizontal:
                 function_string = base_function_string.replace('x[0]', '(x[0]+'+str(o)+')')
 
             else:
                 function_string = base_function_string+'+'+str(o)
-
+            print('function_string', function_string)
             function = eval('lambda x: '+function_string)
 
             # Make inputs
@@ -388,7 +415,7 @@ if __name__ == '__main__':
 
     save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'best_ind_rep'+str(args.rep)+'.csv')
 
-    train_equation_corrector(rng, save_loc, horizontal=False)
+    train_equation_corrector(rng, args.rep, save_loc, horizontal=False)
 
     # signed_error = 1
     # hidden_values = rng.uniform(-1, 1, size=10)
