@@ -9,255 +9,335 @@ import cma
 import argparse
 import os
 
-def get_value(u, v, w, input, hidden, activation):
-    """Compute the output given the input, hidden node
-    values, and the weights.
+class EquationAdjustor:
 
-    Parameters
-    ----------
-    u : 2D np.array
-        The weights between input layer and hidden layer.
-    v : 2D np.array
-        The weights between hidden layer and itself.
-    w : 2D np.array
-        The weights between the hidden layer and output layer.
-    input : 1D np.array
-        The input value for the input nodes.
-    hidden : 1D np.array
-        The current values of the hidden nodes.
-    activation : function
-        The activation function.
+    def __init__(self, initial_hidden_values, hidden_weights, activation, horizontal, datasets,
+                 initial_adjustment, initial_parameter, num_adjustments, fixed_adjustments):
+        """Initialize. Note that runnning this function does not create a full
+        EquationAdjuster because it does not have input and output weights.
 
-    Returns
-    -------
-    output : 1D np.array
-        The value of the nodes in the output layer.
-    hidden: 1D np.array
-        The new values of the nodes in the hidden layer.
-    """
+        Parameters
+        ----------
+        initial_hidden_values : 1D np.array
+            The values of the hidden nodes.
+        hidden_weights : 1D np.array
+            The hidden weights, which do not change.
+        activation : function
+            The activation function.
+        horizontal : bool
+            If True, the nn will be used to change
+            the base function by a horizontal shift.
+            Otherwise, a vertical shift.
+        datasets : list of tuples
+            Each tuple contains the base function (as
+            as string) and the dataset for that function
+            with an offset (vertical or horizontal)
+        initial_adjustment : float
+            The initial amount of change that is possible to do
+            to self.parameter. In other words, each time
+            self.update_equation is called, self.parameter
+            may stay same, increase by self.adjustment
+            or decrease by self.adjustment.
+        initial_parameter : float
+            The initial value of the parameter used to offset
+            the base function.
+        fixed_adjustments : bool
+            If true, the size of the adjustments are constant.
+        """
 
-    hidden = activation(np.matmul(input, u) + np.matmul(hidden, v))
-    output = activation(np.matmul(hidden, w))
+        self.initial_hidden_values = initial_hidden_values
+        self.hidden_weights = hidden_weights
+        self.activation = activation
 
-    return output, hidden
+        self.datasets = datasets
 
+        self.initial_adjustment = initial_adjustment
+        self.initial_parameter = initial_parameter
+        self.num_adjustments = num_adjustments
 
-def evaluate_corrector_neural_network(w, error, signed_error, prev_error, prev_index, hidden_values, hidden_weights,
-                                      activation, horizontal=False):
-    """Evaluate neural network that decides how to change the function.
+        self.fixed_adjustments = fixed_adjustments
 
-    Parameters
-    ----------
-    w : 1D np.array
-        The weights of the neural network as a one dimensional
-        array.
-    signed_error : float
-        The signed error of the current tree.
-    hidden_values : 1D np.array
-        The values of the hidden nodes.
-    activation : function
-        The activation function.
+        self.horizontal = horizontal
 
-    Returns
-    -------
-    index : int
-        The argmax of the output layer. This specifies the
-        way to alter the function.
-    new_hidden_value : np.array
-        The hidden values after evalution.
-    """
-
-    num_hidden = len(hidden_values)
-
-    if horizontal:
-        input = [prev_error, error, *np.eye(3)[int(prev_index)]]
-
-    else:
-        input = [signed_error]
-
-    # Take one node for the signed error.
-    u = w[:num_hidden*len(input)].reshape((len(input), num_hidden))
-
-    # Get recurrent weights
-    v = hidden_weights
-
-    # Get the output weights. Output is one of three nodes.
-    w = w[num_hidden*len(input):].reshape((num_hidden, 3))
-
-    output, new_hidden_value = get_value(u, v, w, input, hidden_values, activation)
-
-    index = np.argmax(output)
-
-    return index, new_hidden_value
+        if self.horizontal:
+            self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string.replace('x[0]', 'np.add(x[0],'+str(c)+')'))
+        
+        else:   # vertical shift
+            self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string+'+'+str(c))
 
 
-def update_equation(function_string, dataset, w, error, signed_error, prev_error, prev_index, hidden_values, hidden_weights,
-                    activation, adjustment, constant, horizontal):
-    """
+        if self.fixed_adjustments:
+            self.step = 0.
 
-    Parameters
-    ----------
-    w : 1D np.array
-        The weights of the neural network as a one dimensional
-        array.
-    signed_error : float
-        The signed error of the current tree.
-    hidden_values : 1D np.array
-        The values of the hidden nodes.
-    activation : function
-        The activation function.
-    adjustment : float
-        The amount of change that is possible to do
-        to constant. In other words, the returned
-        new_constant could be constant, constant+adjustment
-        or constant-adjustment.
-    constant : float
-        The value to adjust a specific constant by.
-
-    Returns
-    -------
-    error : float
-        The RMS error of the adjusted function
-    hidden_values : np.array
-        The hidden values of the neural network
-        as returned by evalutate_corrector_neural_network.
-    new_constant : float
-        The updated constant.
-    """
-
-    index, hidden_values = evaluate_corrector_neural_network(w, error, signed_error, prev_error, prev_index,
-                                                             hidden_values, hidden_weights, activation,
-                                                             horizontal)
-
-    if index == 0:
-        new_constant = constant + adjustment
-
-    elif index == 1:
-        new_constant = constant - adjustment
-
-    elif index == 2:
-        new_constant = constant
-
-    else:
-        print('Unspecified option. index =', index)
-        exit()
-
-    f = eval('lambda x: '+function_string+'+'+str(new_constant))
-
-    x = dataset[:, 1:]
-    y = dataset[:, 0]
-
-    error = np.sqrt(np.mean(np.power(f(x.T)-y, 2)))
-    signed_error = np.mean(y-f(x.T))
-
-    return error, signed_error, index, hidden_values, new_constant
+        else:
+            self.step = self.initial_adjustment/self.num_adjustments
 
 
-def run_equation_corrector(function_string, dataset, w, hidden_values, hidden_weights, activation,
-                           adjustment, constant=0, num_iterations=5, horizontal=False):
+    def reinitialize(self, function_string, dataset):
+        """For all variables that change during
+        equation adjustment, set them to their 
+        initial values."""
 
-    # init signed error
-    x = dataset[:, 1:]
-    y = dataset[:, 0]
+        self.hidden_values = self.initial_hidden_values
+        self.adjustment = self.initial_adjustment
+        self.parameter = self.initial_parameter
 
-    if horizontal:
-        f = eval('lambda x: '+function_string.replace('x[0]', '(x[0]+'+str(constant)+')'))
+        # In case index is passed into nn
+        self.index = 0
 
-    else:
-        f = eval('lambda x: '+function_string+'+'+str(constant))
+        # init signed error
+        x = dataset[:, 1:]
+        y = dataset[:, 0]
 
-    errors = [np.sqrt(np.mean(np.power(f(x.T)-y, 2)))]
-    error = errors[0]
-    signed_error = np.mean(y-f(x.T))
-    prev_error = errors[-1]
-    prev_index = 2.
+        f = self.adjust_function(function_string, self.parameter)
 
-    step = adjustment/num_iterations
-
-    for _ in range(num_iterations):
-
-        adjustment -= step
-
-        error, signed_error, prev_index, hidden_values, constant = update_equation(function_string, dataset, w,
-                                                                                   error/errors[0], signed_error/errors[0],
-                                                                                   prev_error/errors[0],
-                                                                                   prev_index, hidden_values,
-                                                                                   hidden_weights, activation,
-                                                                                   adjustment, constant, horizontal)
-
-        errors.append(error)
-
-        prev_error = errors[-2]
-
-    # normalized_errors = [e/errors[0] if errors[0] != 0 else e for e in errors[1:]]
-
-    # weights = [i/len(errors[1:]) for i in range(1, len(errors))]
-    # normalized_weights = np.array(weights)/sum(weights)
-
-    # fitness = np.average(normalized_errors, weights=normalized_weights)
-    fitness = error/errors[0]
-
-    return error, constant, fitness
+        self.errors = [np.sqrt(np.mean(np.power(f(x.T)-y, 2)))]
+        self.signed_error = np.mean(y-f(x.T))
 
 
-def cma_es_function(w, rng, depth, hidden_values, hidden_weights, activation, adjustment,
-                    num_iterations, datasets, return_all_errors=False, horizontal=False):
-    """Function that is passed to CMA-ES."""
+    def get_value(self, input_weights, hidden_weights, output_weights, input):
+        """Compute the output given the input, hidden node
+        values, and the weights.
 
-    fitnesses = []
-    errors = []
+        Parameters
+        ----------
+        input_weights : 2D np.array
+            The weights between input layer and hidden layer.
+        hidden_weights : 2D np.array
+            The weights between hidden layer and itself.
+        output_weights : 2D np.array
+            The weights between the hidden layer and output layer.
+        input : 1D np.array
+            The input value for the input nodes.
 
-    for function_string, dataset in datasets:
+        Returns
+        -------
+        output : 1D np.array
+            The value of the nodes in the output layer.
+        """
 
-        constant = 0
+        self.hidden_values = self.activation(np.matmul(input, input_weights))# + np.matmul(self.hidden_values, hidden_weights))
+        output = self.activation(np.matmul(self.hidden_values, output_weights))
 
-        error, constant, fitness = run_equation_corrector(function_string, dataset, w, hidden_values, hidden_weights,
-                                                          activation, adjustment, constant, num_iterations, horizontal)
-
-        fitnesses.append(fitness)
-        errors.append(error)
-
-    if return_all_errors:
-        return errors
-
-    else:
-        return np.mean(fitnesses)
+        return output[:-1]
 
 
-def train_equation_corrector(rng, rep, save_loc, horizontal):
+    def evaluate_corrector_neural_network(self, w, error, signed_error, prev_error, prev_index):
+        """Evaluate neural network that decides how to change the function.
 
-    hidden_values = rng.uniform(-1, 1, size=40)
+        Parameters
+        ----------
+        w : 1D np.array
+            The weights of the neural network as a one dimensional
+            array.
+        signed_error : float
+            The signed error of the current tree.
+
+        Returns
+        -------
+        index : int
+            The argmax of the output layer. This specifies the
+            way to alter the function.
+        """
+
+        num_hidden = len(self.hidden_values)
+
+        if self.horizontal:
+            input = [prev_error, error, *np.eye(2)[int(prev_index)]]
+
+        else:
+            input = [signed_error]
+
+        # Take one node for the signed error.
+        input_weights = w[:num_hidden*len(input)].reshape((len(input), num_hidden))
+
+        # Get recurrent weights
+        hidden_weights = self.hidden_weights
+
+        # Get the output weights. Output is one of three nodes.
+        output_weights = w[num_hidden*len(input):].reshape((num_hidden, 3))
+
+        output = self.get_value(input_weights, hidden_weights, output_weights, input)
+
+        index = np.argmax(output)
+
+        return index
+
+
+    def update_equation(self, function_string, dataset, w):
+        """
+
+        Parameters
+        ----------
+        w : 1D np.array
+            The weights of the neural network as a one dimensional
+            array.
+        signed_error : float
+            The signed error of the current tree.
+
+        Returns
+        -------
+        error : float
+            The RMS error of the adjusted function
+        """
+
+        prev_error = self.errors[-2] if len(self.errors) > 1 else 0.
+
+        self.index = self.evaluate_corrector_neural_network(w, error=self.errors[-1]/self.errors[0],
+                                                            signed_error=self.signed_error/self.errors[0],
+                                                            prev_error=prev_error/self.errors[0], 
+                                                            prev_index=self.index)
+
+        # if self.errors[-1] < prev_error:
+        #     pass
+
+        # elif self.errors[-1] > prev_error:
+        #     self.index = (self.index + 1) % 2
+
+        # else:
+        #     self.index = 0
+
+        if self.index == 0:
+            self.parameter += self.adjustment
+
+        elif self.index == 1:
+            self.parameter -= self.adjustment
+
+        elif self.index == 2:
+            pass # keep self.parameter the same
+
+        else:
+            print('Unspecified option. index =', index)
+            exit()
+
+        f = self.adjust_function(function_string, self.parameter)
+
+        x = dataset[:, 1:]
+        y = dataset[:, 0]
+
+        self.errors.append(np.sqrt(np.mean(np.power(y-f(x.T), 2))))
+        self.signed_error = np.mean(y-f(x.T))
+
+
+    def run_equation_corrector(self, function_string, dataset, w):
+
+        for _ in range(self.num_adjustments):
+
+            if self.adjustment < 0:
+                print('adjustment is negative! Stopping!')
+                exit()
+
+            self.update_equation(function_string, dataset, w)
+
+            self.adjustment -= self.step
+
+        fitness = self.errors[-1]/self.errors[0]
+
+        return fitness
+
+
+    def cma_es_function(self, w, rng, return_all_errors=False):
+        """Function that is passed to CMA-ES."""
+
+        fitnesses = []
+        errors = []
+
+        for function_string, dataset in self.datasets:
+
+            self.reinitialize(function_string, dataset)
+
+            fitness = self.run_equation_corrector(function_string, dataset, w)
+
+            fitnesses.append(fitness)
+            errors.append(self.errors[-1])
+
+        if return_all_errors:
+            return fitnesses
+
+        else:
+            return np.mean(fitnesses)
+
+
+    def equation_adjuster_from_file(self, filename):
+        """Read the data necessary to use eqution
+        adjuster from file. File is assume to be
+        saved as detailed in train_equation_adjuster().
+
+        Parameters
+        ----------
+        filename : str
+            Location of the file to read from.
+
+        Returns
+        -------
+        trained_weights : np.array
+            The weights for input layer and output
+            layer of nn. The array is flat.
+        untrained_weights : np.array
+            The weights for the hidden layer. This
+            array is also 1 dimensional.
+        initial_hidden_values : np.array
+            The values of the hidden neuron (initially).
+        """
+
+        # Remove nans
+        rm_nans = lambda x: x[~np.isnan(x)] 
+
+        data = pd.read_csv(filename).iloc[:, 2:].values
+
+        trained_weights, self.initial_hidden_values = rm_nans(data[:, 0]), rm_nans(data[:, 1]), rm_nans(data[:, 2])
+
+        self.hidden_weights = hidden_weights.reshape((len(self.initial_hidden_values, self.initial_hidden_values)))
+        self.w = trained_weights
+
+# -------------------------------------------------------------------------- #
+#                               End of Class
+# -------------------------------------------------------------------------- #
+
+
+def train_equation_corrector(rep, fixed_adjustments, horizontal):
+
+    rng = np.random.RandomState(rep)
+
+    hidden_values = rng.uniform(-1, 1, size=10)
     hidden_weights = rng.uniform(-1, 1, size=(len(hidden_values), len(hidden_values)))
-    activation = np.tanh
-    num_input = 5 if horizontal else 1
+    num_input = 4 if horizontal else 1
     num_output = 3
 
     weights = rng.uniform(-1, 1, size=num_input*len(hidden_values)+len(hidden_values)*num_output)
-    adjustment = 1
     
     # get data
-    num_targets = 5
+    num_targets = 50
     num_base_function_per_target = 2
     depth = 3
 
-    sigma = 1.
+    sigma = 2.
     function_evals = float('inf')
     seed = args.rep + 1
     # timeout = get_computation_time(18000)
-    timeout = 360
-    num_iterations = 50
+    timeout = 18000
 
     return_all_errors = False
 
     # max_offset = sum([1-k/num_iterations for k in range(num_iterations)])
     max_offset = 5
 
-    datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_offset, horizontal)
-    datasets_test = get_data_for_equation_corrector(rng, num_targets+45, num_base_function_per_target, depth, max_offset, horizontal)
+    datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_offset, horizontal, fixed_adjustments)
+    print('test error below')
+    datasets_test = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_offset, horizontal, fixed_adjustments)
 
-    xopt, es = cma.fmin2(cma_es_function, weights, sigma,
-                     args=(rng, depth, hidden_values, hidden_weights, activation, adjustment,
-                           num_iterations, datasets, return_all_errors, horizontal),
+    EA = EquationAdjustor(initial_hidden_values=hidden_values,
+                          hidden_weights=hidden_weights,
+                          activation=np.tanh,
+                          horizontal=horizontal,
+                          datasets=datasets,
+                          initial_adjustment=1.,
+                          initial_parameter=0., # should go in __init__. scaling will be 1
+                          num_adjustments=50,
+                          fixed_adjustments=fixed_adjustments)
+
+    xopt, es = cma.fmin2(EA.cma_es_function, weights, sigma,
+                     args=(rng, return_all_errors),
                      options={'maxfevals': function_evals,
                               # 'ftarget': 1e-10,
                               'tolfun': 0,
@@ -267,23 +347,25 @@ def train_equation_corrector(rng, rep, save_loc, horizontal):
                               'timeout': timeout},
                      restarts=0)
 
-    test_errors = cma_es_function(xopt, rng, depth, hidden_values, hidden_weights, activation, adjustment,
-                                 num_iterations, datasets, return_all_errors=True, horizontal=horizontal)
+    test_errors = EA.cma_es_function(xopt, rng, return_all_errors=True)
+
+    save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster')
+
 
     # save the best individual
     # ['test error', 'trained weights', 'untrained weights', 'initial hidden values']
-    data = [test_errors, xopt, hidden_weights.flatten(), hidden_values]
+    data = [list(test_errors), list(xopt), list(hidden_weights.flatten()), list(hidden_values)]
     df = pd.DataFrame(data).transpose()
-    df.to_csv(save_loc, header=['test error', 'trained weights', 'untrained weights', 'initial hidden values'])
+    df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'.csv'), header=['test error', 'trained weights', 'untrained weights', 'initial hidden values'])
 
-    plt.hist(test_errors)
-    plt.ylabel('Frequency')
-    plt.xlabel('Test Error')
-    plt.savefig(os.path.join(os.path.dirname(save_loc), 'hist_final_errors_rep'+str(rep)+'.pdf'))
+    # plt.hist(test_errors)
+    # plt.ylabel('Frequency')
+    # plt.xlabel('Test Error')
+    # plt.savefig(os.path.join(save_loc, 'figures', 'hist_final_errors_rep'+str(args.rep)+'.pdf'))
 
 
 def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target,
-                                    depth, max_offset=50, horizontal=False):
+                                    depth, max_offset=50, horizontal=False, fixed_adjustments=False):
     """Generate a dataset for multiple functions. Keep track of
     the base function(s) connected with the dataset.
 
@@ -313,34 +395,53 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
     # between 1 and 6.
     num_vars = 1    #rng.choice(5)+1
 
-    targets = [GP.Individual(rng=rng, primitive_set=primitives, terminal_set=terminals, num_vars=num_vars,
-                             depth=depth, method='grow') for _ in range(num_targets)]
+    targets = []
 
-    datasets = []
+    for _ in range(num_targets):
 
-    for t in targets:
+        t = GP.Individual(rng=rng, primitive_set=primitives, terminal_set=terminals, num_vars=num_vars,
+                          depth=depth, method='grow')
 
-        while 'x0' not in t.get_lisp_string() and horizontal:
+        f = eval('lambda x: ' + t.convert_lisp_to_standard_for_function_creation())
+        outputs = f(np.array([np.linspace(-10, 10, 1000)]).T)
+
+        while 'x0' not in t.get_lisp_string() or len(np.unique(np.around(outputs,7))) == 1 or np.any([t.get_lisp_string() == ind.get_lisp_string() for ind in targets]) or t.get_lisp_string() == '(x0)':
+
             t = GP.Individual(rng=rng, primitive_set=primitives, terminal_set=terminals, num_vars=num_vars,
                               depth=depth, method='grow')
 
-        offset = [0, 0]
+            f = eval('lambda x: ' + t.convert_lisp_to_standard_for_function_creation())
+            outputs = f(np.array([np.linspace(-10, 10, 1000)]))
 
-        while 0 in offset:
-            offset = rng.uniform(-max_offset, max_offset, size=num_base_function_per_target)
+        targets.append(t)
 
-        base_file = os.path.join(os.environ['GP_DATA'], 'tree')
-        print('target', num_targets)
+    datasets = []
+
+    for i, t in enumerate(targets):
+
+        offset = [0., 0.]
+
+        if fixed_adjustments:
+            rand_offset = rng.randint
+
+        else:
+            rand_offset = rng.uniform
+
+        while 0. in offset:
+            offset = rand_offset(-max_offset, max_offset, size=num_base_function_per_target)
+
+        # base_file = os.path.join(os.environ['GP_DATA'], 'tree')
+
         for o in offset:
-            print(o)
+
             base_function_string = t.convert_lisp_to_standard_for_function_creation()
-            print('base_function_string', base_function_string)
+
             if horizontal:
-                function_string = base_function_string.replace('x[0]', '(x[0]+'+str(o)+')')
+                function_string = base_function_string.replace('x[0]', 'np.add(x[0],'+str(o)+')')
 
             else:
                 function_string = base_function_string+'+'+str(o)
-            print('function_string', function_string)
+
             function = eval('lambda x: '+function_string)
 
             # Make inputs
@@ -349,60 +450,11 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
             dataset = np.hstack((np.array([function(x.T)]).T, x))
 
             datasets.append((base_function_string, dataset))
-            # datasets[base_function_string] = dataset
 
     return datasets
 
 
-def equation_adjuster_from_file(filename):
-    """Read the data necessary to use eqution
-    adjuster from file. File is assume to be
-    saved as detailed in train_equation_adjuster().
-
-    Parameters
-    ----------
-    filename : str
-        Location of the file to read from.
-
-    Returns
-    -------
-    trained_weights : np.array
-        The weights for input layer and output
-        layer of nn. The array is flat.
-    untrained_weights : np.array
-        The weights for the hidden layer. This
-        array is also 1 dimensional.
-    initial_hidden_values : np.array
-        The values of the hidden neuron (initially).
-    """
-
-    # Remove nans
-    rm_nans = lambda x: x[~np.isnan(x)] 
-
-    data = pd.read_csv(filename).iloc[:, 2:].values
-
-    trained_weights, untrained_weights, initial_hidden_values = rm_nans(data[:, 0]), rm_nans(data[:, 1]), rm_nans(data[:, 2])
-
-    return trained_weights, untrained_weights, initial_hidden_values
-
-
 if __name__ == '__main__':
-
-    # num_targets = 1
-    # num_base_function_per_target = 3
-    # datasets =get_data_for_equation_corrector(rng=np.random.RandomState(0),
-    #                                           num_targets=num_targets,
-    #                                           num_base_function_per_target=num_base_function_per_target,
-    #                                           depth=3)
-
-    # if num_targets*num_base_function_per_target == len(datasets):
-    #     print('Success!')
-
-    # else:
-    #     print('Failure!')
-
-    # exit()
-
 
     parser = argparse.ArgumentParser()
 
@@ -411,28 +463,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    rng = np.random.RandomState(args.rep)
-
-    save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'best_ind_rep'+str(args.rep)+'.csv')
-
-    train_equation_corrector(rng, args.rep, save_loc, horizontal=False)
-
-    # signed_error = 1
-    # hidden_values = rng.uniform(-1, 1, size=10)
-    # activation = np.tanh
-
-    # target = lambda x: 2+x
-    # x = np.linspace(-1, 1, 100)
-    # y = target(x)
-    # dataset = np.vstack((y, x)).T
-
-    # w = rng.uniform(-1, 1, size=1+len(hidden_values)**2+len(hidden_values)*3)
-    # adjustment = 1
-    
-    # # get data
-    # num_targets = 5
-    # num_base_function_per_target = 2
-    # depth = 3
-
-    # get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth)
-
+    train_equation_corrector(args.rep, fixed_adjustments=False, horizontal=True)
