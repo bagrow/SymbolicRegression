@@ -9,10 +9,11 @@ import cma
 
 import argparse
 import os
+import time
 
 class EquationAdjustor:
 
-    def __init__(self, initial_hidden_values, hidden_weights, activation, horizontal, datasets,
+    def __init__(self, initial_hidden_values, hidden_weights, activation, horizontal,
                  initial_adjustment, initial_parameter, num_adjustments, fixed_adjustments):
         """Initialize. Note that runnning this function does not create a full
         EquationAdjuster because it does not have input and output weights.
@@ -29,10 +30,6 @@ class EquationAdjustor:
             If True, the nn will be used to change
             the base function by a horizontal shift.
             Otherwise, a vertical shift.
-        datasets : list of tuples
-            Each tuple contains the base function (as
-            as string) and the dataset for that function
-            with an offset (vertical or horizontal)
         initial_adjustment : float
             The initial amount of change that is possible to do
             to self.parameter. In other words, each time
@@ -49,8 +46,6 @@ class EquationAdjustor:
         self.initial_hidden_values = initial_hidden_values
         self.hidden_weights = hidden_weights
         self.activation = activation
-
-        self.datasets = datasets
 
         self.initial_adjustment = initial_adjustment
         self.initial_parameter = initial_parameter
@@ -237,13 +232,13 @@ class EquationAdjustor:
         return fitness
 
 
-    def cma_es_function(self, w, rng, return_all_errors=False):
+    def cma_es_function(self, w, rng, datasets, return_all_errors=False):
         """Function that is passed to CMA-ES."""
 
         fitnesses = []
         errors = []
 
-        for function_string, dataset in self.datasets:
+        for function_string, dataset in datasets:
 
             self.reinitialize(function_string, dataset)
 
@@ -253,7 +248,7 @@ class EquationAdjustor:
             errors.append(self.errors[-1])
 
         if return_all_errors:
-            return fitnesses
+            return errors, fitnesses
 
         else:
             return np.mean(fitnesses)
@@ -309,7 +304,8 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
     
     # get data
     num_targets = 50
-    num_base_function_per_target = 2
+    num_test_targets = 1
+    num_base_function_per_target = 1
     depth = 3
 
     sigma = 2.
@@ -317,30 +313,39 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
     seed = args.rep + 1
 
     if not debug_mode:
-        timeout = get_computation_time(timeout)
-    # timeout = 18000
+        timeout, cycles_per_second = get_computation_time(timeout, return_cycles_per_second=True)
 
+    testing = False
     return_all_errors = False
 
     # max_offset = sum([1-k/num_iterations for k in range(num_iterations)])
     max_offset = 5
 
     datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_offset, horizontal, fixed_adjustments)
-    print('test error below')
-    datasets_test = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_offset, horizontal, fixed_adjustments)
+    datasets_test = get_data_for_equation_corrector(rng, num_test_targets, num_base_function_per_target, depth, max_offset, horizontal, fixed_adjustments)
+
+    save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp))
+
+    if not os.path.exists(save_loc):
+        os.makedirs(save_loc)
+
+    for i, (function_string, dataset) in enumerate(datasets_test):
+
+        df = pd.DataFrame(dataset,
+                          columns=[function_string] + ['x['+str(k)+']' for k in range(len(dataset[0])-1)])
+        df.to_csv(os.path.join(save_loc, 'dataset'+str(i)+'_rep'+str(rep)+'.csv'))
 
     EA = EquationAdjustor(initial_hidden_values=hidden_values,
                           hidden_weights=hidden_weights,
                           activation=np.tanh,
                           horizontal=horizontal,
-                          datasets=datasets,
                           initial_adjustment=1.,
                           initial_parameter=0., # should go in __init__. scaling will be 1
                           num_adjustments=50,
                           fixed_adjustments=fixed_adjustments)
 
     xopt, es = cma.fmin2(EA.cma_es_function, weights, sigma,
-                     args=(rng, return_all_errors),
+                     args=(rng, datasets, return_all_errors),
                      options={'maxfevals': function_evals,
                               # 'ftarget': 1e-10,
                               'tolfun': 0,
@@ -350,18 +355,26 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
                               'timeout': timeout},
                      restarts=0)
 
-    test_errors = EA.cma_es_function(xopt, rng, return_all_errors=True)
+    train_errors, train_fitnesses = EA.cma_es_function(xopt, rng, datasets, return_all_errors=True)
 
-    save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp))
+    start_time = time.time()
 
-    if not os.path.exists(save_loc):
-        os.makedirs(save_loc)
+    test_errors, test_fitnesses = EA.cma_es_function(xopt, rng, datasets_test, return_all_errors=True)
+
+    test_time = time.time() - start_time
+
+    if not debug_mode:
+
+        test_computation = test_time*cycles_per_second
+
+        with open(os.path.join(save_loc, 'test_computation_rep'+str(rep)+'.txt'), mode='w') as f:
+            f.write(str(test_computation))
 
     # save the best individual
     # ['test error', 'trained weights', 'untrained weights', 'initial hidden values']
-    data = [list(test_errors), list(xopt), list(hidden_weights.flatten()), list(hidden_values)]
+    data = [list(train_errors), list(train_fitnesses), list(test_errors), list(test_fitnesses), list(xopt), list(hidden_weights.flatten()), list(hidden_values)]
     df = pd.DataFrame(data).transpose()
-    df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'.csv'), header=['test error', 'trained weights', 'untrained weights', 'initial hidden values'])
+    df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'.csv'), header=['train error', 'train fitness', 'test error', 'test fitness', 'trained weights', 'untrained weights', 'initial hidden values'])
 
     # plt.hist(test_errors)
     # plt.ylabel('Frequency')
