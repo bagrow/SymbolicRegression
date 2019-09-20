@@ -460,7 +460,9 @@ if __name__ == '__main__':
 
     # this will act as an index for rep_list (offset by 1 though)
     parser.add_argument('rep', help='Number of runs already performed', type=int)
+    parser.add_argument('-hs', '--horizontal_shift', help='If True, NN will be trained to do horizontal shifts',
+                        action='store_true')
 
     args = parser.parse_args()
 
-    train_equation_corrector(args.rep, fixed_adjustments=False, horizontal=True)
+    train_equation_corrector(args.rep, fixed_adjustments=False, horizontal=args.horizontal_shift)
