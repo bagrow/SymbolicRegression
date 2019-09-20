@@ -57,10 +57,11 @@ class EquationAdjustor:
 
         if self.horizontal:
             self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string.replace('x[0]', 'np.add(x[0],'+str(c)+')'))
-        
+            self.num_output = 2
+
         else:   # vertical shift
             self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string+'+'+str(c))
-
+            self.num_output = 3
 
         if self.fixed_adjustments:
             self.step = 0.
@@ -115,7 +116,7 @@ class EquationAdjustor:
         self.hidden_values = self.activation(np.matmul(input, input_weights))# + np.matmul(self.hidden_values, hidden_weights))
         output = self.activation(np.matmul(self.hidden_values, output_weights))
 
-        return output[:-1]
+        return output
 
 
     def evaluate_corrector_neural_network(self, w, error, signed_error, prev_error, prev_index):
@@ -151,7 +152,7 @@ class EquationAdjustor:
         hidden_weights = self.hidden_weights
 
         # Get the output weights. Output is one of three nodes.
-        output_weights = w[num_hidden*len(input):].reshape((num_hidden, 3))
+        output_weights = w[num_hidden*len(input):].reshape((num_hidden, self.num_output))
 
         output = self.get_value(input_weights, hidden_weights, output_weights, input)
 
@@ -298,7 +299,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
     hidden_values = rng.uniform(-1, 1, size=10)
     hidden_weights = rng.uniform(-1, 1, size=(len(hidden_values), len(hidden_values)))
     num_input = 4 if horizontal else 1
-    num_output = 3
+    num_output = 3 if not horizontal else 2
 
     weights = rng.uniform(-1, 1, size=num_input*len(hidden_values)+len(hidden_values)*num_output)
     
@@ -310,24 +311,54 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
     sigma = 2.
     function_evals = float('inf')
-    seed = args.rep + 1
+    seed = args.exp + args.rep + 1
+
+    activation = np.tanh
+    initial_adjustment = 1.
+    initial_parameter = 0.
+    num_adjustments = 50
 
     if not debug_mode:
         timeout, cycles_per_second = get_computation_time(timeout, return_cycles_per_second=True)
 
-    testing = False
     return_all_errors = False
 
-    # max_offset = sum([1-k/num_iterations for k in range(num_iterations)])
-    max_offset = 5
+    if not horizontal:
+        max_shift = sum([1-k/num_adjustments for k in range(num_adjustments)])
 
-    datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_offset, horizontal, fixed_adjustments)
-    datasets_test = get_data_for_equation_corrector(rng, num_test_targets, num_base_function_per_target, depth, max_offset, horizontal, fixed_adjustments)
+    else:
+        max_shift = 5
+
+    datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, fixed_adjustments)
+    datasets_test = get_data_for_equation_corrector(rng, num_test_targets, num_base_function_per_target, depth, max_shift, horizontal, fixed_adjustments)
 
     save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp))
 
     if not os.path.exists(save_loc):
         os.makedirs(save_loc)
+
+    # Make a file for parameter summary
+    summary_data = [('experiment', exp),
+                    ('number of hidden nodes', len(hidden_values)),
+                    ('number of inputs', num_input),
+                    ('number of outputs', num_output),
+                    ('number of target functions', num_targets),
+                    ('number of target functions for testing', num_test_targets),
+                    ('max depth', depth),
+                    ('sigma (CMA-ES)', sigma),
+                    ('max number of function evaluations', function_evals),
+                    ('debug mode', debug_mode),
+                    ('horizontal', horizontal),
+                    ('max shift', max_shift),
+                    ('timeout', timeout),
+                    ('fixed adjustment', fixed_adjustments),
+                    ('activation', activation.__name__),
+                    ('initial adjustment', initial_adjustment),
+                    ('initial parameter', initial_parameter),
+                    ('number of adjustments', num_adjustments)]
+
+    df = pd.DataFrame(summary_data, columns=['Parameters', 'Values'])
+    df.to_csv(os.path.join(save_loc, 'summary_exp'+str(exp)+'.csv'))
 
     for i, (function_string, dataset) in enumerate(datasets_test):
 
@@ -339,9 +370,9 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
                           hidden_weights=hidden_weights,
                           activation=np.tanh,
                           horizontal=horizontal,
-                          initial_adjustment=1.,
-                          initial_parameter=0., # should go in __init__. scaling will be 1
-                          num_adjustments=50,
+                          initial_adjustment=initial_adjustment,
+                          initial_parameter=initial_parameter, # should go in __init__. scaling will be 1
+                          num_adjustments=num_adjustments,
                           fixed_adjustments=fixed_adjustments)
 
     xopt, es = cma.fmin2(EA.cma_es_function, weights, sigma,
@@ -383,7 +414,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
 
 def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target,
-                                    depth, max_offset=50, horizontal=False, fixed_adjustments=False):
+                                    depth, max_shift=50, horizontal=False, fixed_adjustments=False):
     """Generate a dataset for multiple functions. Keep track of
     the base function(s) connected with the dataset.
 
@@ -446,7 +477,7 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
             rand_offset = rng.uniform
 
         while 0. in offset:
-            offset = rand_offset(-max_offset, max_offset, size=num_base_function_per_target)
+            offset = rand_offset(-max_shift, max_shift, size=num_base_function_per_target)
 
         # base_file = os.path.join(os.environ['GP_DATA'], 'tree')
 
