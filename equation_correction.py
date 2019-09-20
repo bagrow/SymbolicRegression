@@ -1,5 +1,6 @@
 import GeneticProgramming as GP
 from GeneticProgramming.protected_functions import *
+from get_computation import get_computation_time
 
 import numpy as np
 import pandas as pd
@@ -295,7 +296,7 @@ class EquationAdjustor:
 # -------------------------------------------------------------------------- #
 
 
-def train_equation_corrector(rep, fixed_adjustments, horizontal):
+def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, debug_mode):
 
     rng = np.random.RandomState(rep)
 
@@ -314,8 +315,10 @@ def train_equation_corrector(rep, fixed_adjustments, horizontal):
     sigma = 2.
     function_evals = float('inf')
     seed = args.rep + 1
-    # timeout = get_computation_time(18000)
-    timeout = 18000
+
+    if not debug_mode:
+        timeout = get_computation_time(timeout)
+    # timeout = 18000
 
     return_all_errors = False
 
@@ -349,8 +352,10 @@ def train_equation_corrector(rep, fixed_adjustments, horizontal):
 
     test_errors = EA.cma_es_function(xopt, rng, return_all_errors=True)
 
-    save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster')
+    save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp))
 
+    if not os.path.exists(save_loc):
+        os.makedirs(save_loc)
 
     # save the best individual
     # ['test error', 'trained weights', 'untrained weights', 'initial hidden values']
@@ -460,9 +465,20 @@ if __name__ == '__main__':
 
     # this will act as an index for rep_list (offset by 1 though)
     parser.add_argument('rep', help='Number of runs already performed', type=int)
+    parser.add_argument('exp', help='Experiment number. Used in save location', type=int)
     parser.add_argument('-hs', '--horizontal_shift', help='If True, NN will be trained to do horizontal shifts',
+                        action='store_true')
+    parser.add_argument('-t', '--timeout', help='The number of seconds use for training based on clock speed.',
+                        type=float, action='store')
+
+    parser.add_argument('-d', '--debug_mode', help='Do not adjust timeout',
                         action='store_true')
 
     args = parser.parse_args()
+    print(args)
 
-    train_equation_corrector(args.rep, fixed_adjustments=False, horizontal=args.horizontal_shift)
+    assert args.timeout is not None, 'Specify a time limit with -t or --timeout'
+
+    train_equation_corrector(rep=args.rep, exp=args.exp, timeout=args.timeout,
+                             fixed_adjustments=False, horizontal=args.horizontal_shift,
+                             debug_mode=args.debug_mode)
