@@ -236,23 +236,62 @@ class EquationAdjustor:
     def cma_es_function(self, w, rng, datasets, return_all_errors=False):
         """Function that is passed to CMA-ES."""
 
-        fitnesses = []
-        errors = []
+        training_fitnesses = []
+        training_errors = []
+        validation_fitnesses = []
+        validation_errors = []
+        testing_fitnesses = []
+        testing_errors = []
 
-        for function_string, dataset in datasets:
+        for function_string, training_dataset, validation_dataset, testing_dataset in datasets:
 
-            self.reinitialize(function_string, dataset)
+            # training dataset
+            self.reinitialize(function_string, training_dataset)
 
-            fitness = self.run_equation_corrector(function_string, dataset, w)
+            training_fitness = self.run_equation_corrector(function_string, training_dataset, w)
 
-            fitnesses.append(fitness)
-            errors.append(self.errors[-1])
+            training_fitnesses.append(training_fitness)
+            training_errors.append(self.errors[-1])
+
+            # validation dataset
+            self.reinitialize(function_string, validation_dataset)
+
+            validation_fitness = self.run_equation_corrector(function_string, validation_dataset, w)
+
+            validation_fitnesses.append(validation_fitness)
+            validation_errors.append(self.errors[-1])
+
+            if return_all_errors:
+
+                # testing dataset
+                self.reinitialize(function_string, testing_dataset)
+
+                testing_fitness = self.run_equation_corrector(function_string, testing_dataset, w)
+
+                testing_fitnesses.append(testing_fitness)
+                testing_errors.append(self.errors[-1])
+
+        global best
+
+        if validation_fitness < best[0]:
+
+            best = (np.mean(validation_fitnesses), w)
 
         if return_all_errors:
+
+            errors = {'training': training_errors,
+                      'validation': validation_errors,
+                      'testing': testing_errors}
+
+            fitnesses = {'training': training_fitnesses,
+                         'validation': validation_fitnesses,
+                         'testing': testing_fitnesses}
+
             return errors, fitnesses
 
         else:
-            return np.mean(fitnesses)
+
+            return np.mean(training_fitnesses)
 
 
     def equation_adjuster_from_file(self, filename):
@@ -301,13 +340,18 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
     num_input = 4 if horizontal else 1
     num_output = 3 if not horizontal else 2
 
+    global best
+
+    # best = (error, weights)
+    best = (float('inf'), None)
+
     weights = rng.uniform(-1, 1, size=num_input*len(hidden_values)+len(hidden_values)*num_output)
     
     # get data
     num_targets = 50
     num_test_targets = 1
     num_base_function_per_target = 1
-    depth = 3
+    depth = 6
 
     sigma = 2.
     function_evals = float('inf')
@@ -330,7 +374,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
         max_shift = 5
 
     datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, fixed_adjustments)
-    datasets_test = get_data_for_equation_corrector(rng, num_test_targets, num_base_function_per_target, depth, max_shift, horizontal, fixed_adjustments)
+    datasets_test_functions = get_data_for_equation_corrector(rng, num_test_targets, num_base_function_per_target, depth, max_shift, horizontal, fixed_adjustments)
 
     save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp))
 
@@ -360,11 +404,14 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
     df = pd.DataFrame(summary_data, columns=['Parameters', 'Values'])
     df.to_csv(os.path.join(save_loc, 'summary_exp'+str(exp)+'.csv'))
 
-    for i, (function_string, dataset) in enumerate(datasets_test):
+    for i, (function_string, training_dataset, validation_dataset, testing_dataset) in enumerate(datasets_test_functions):
 
-        df = pd.DataFrame(dataset,
-                          columns=[function_string] + ['x['+str(k)+']' for k in range(len(dataset[0])-1)])
-        df.to_csv(os.path.join(save_loc, 'dataset'+str(i)+'_rep'+str(rep)+'.csv'))
+        table = [[x for x in [label] + list(row)] for label, dataset in zip(['training', 'validation', 'testing'], [training_dataset, validation_dataset, testing_dataset]) for row in dataset]
+
+        df = pd.DataFrame(table,
+                          columns=['dataset', function_string] + ['x['+str(k)+']' for k in range(len(training_dataset[0])-1)])    
+
+        df.to_csv(os.path.join(save_loc, 'testing_function_dataset'+str(i)+'_rep'+str(rep)+'.csv'), index=False)
 
     EA = EquationAdjustor(initial_hidden_values=hidden_values,
                           hidden_weights=hidden_weights,
@@ -386,11 +433,14 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
                               'timeout': timeout},
                      restarts=0)
 
-    train_errors, train_fitnesses = EA.cma_es_function(xopt, rng, datasets, return_all_errors=True)
+    xopt = best[1]
+
+    errors, fitnesses = EA.cma_es_function(xopt, rng, datasets, return_all_errors=True)
 
     start_time = time.time()
 
-    test_errors, test_fitnesses = EA.cma_es_function(xopt, rng, datasets_test, return_all_errors=True)
+    errors_test_function, fitnesses_test_function = EA.cma_es_function(xopt, rng, datasets_test_functions,
+                                                                       return_all_errors=True)
 
     test_time = time.time() - start_time
 
@@ -402,15 +452,19 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
             f.write(str(test_computation))
 
     # save the best individual
-    # ['test error', 'trained weights', 'untrained weights', 'initial hidden values']
-    data = [list(train_errors), list(train_fitnesses), list(test_errors), list(test_fitnesses), list(xopt), list(hidden_weights.flatten()), list(hidden_values)]
+    data = [list(errors['training']), list(fitnesses['training']), list(errors['validation']), list(fitnesses['validation']), list(errors['testing']), list(fitnesses['testing']), list(errors_test_function['testing']), list(fitnesses_test_function['testing']), list(xopt), list(hidden_weights.flatten()), list(hidden_values)]
     df = pd.DataFrame(data).transpose()
-    df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'.csv'), header=['train error', 'train fitness', 'test error', 'test fitness', 'trained weights', 'untrained weights', 'initial hidden values'])
-
-    # plt.hist(test_errors)
-    # plt.ylabel('Frequency')
-    # plt.xlabel('Test Error')
-    # plt.savefig(os.path.join(save_loc, 'figures', 'hist_final_errors_rep'+str(args.rep)+'.pdf'))
+    df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'.csv'), header=['train error',
+                                                                              'train fitness',
+                                                                              'validation error',
+                                                                              'validation fitness',
+                                                                              'test error',
+                                                                              'test fitness',
+                                                                              'test error on test function',
+                                                                              'test fitness on test funciton',
+                                                                              'trained weights',
+                                                                              'untrained weights',
+                                                                              'initial hidden values'])
 
 
 def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target,
@@ -468,7 +522,7 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
 
     for i, t in enumerate(targets):
 
-        offset = [0., 0.]
+        offset = np.zeros(num_base_function_per_target)
 
         if fixed_adjustments:
             rand_offset = rng.randint
@@ -494,11 +548,22 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
             function = eval('lambda x: '+function_string)
 
             # Make inputs
-            x = np.array([rng.uniform(-1, 1, size=100) for _ in range(num_vars)]).T
+            x = np.array([rng.uniform(-1, 1, size=300) for _ in range(num_vars)]).T
 
-            dataset = np.hstack((np.array([function(x.T)]).T, x))
+            training_indices = rng.choice(300, size=100, replace=False)
+            remaining_indices = [i for i in range(300) if i not in training_indices]
+            validation_indices = rng.choice(remaining_indices, size=100, replace=False)
+            testing_indices = np.array([i for i in range(300) if i not in training_indices and i not in validation_indices])
 
-            datasets.append((base_function_string, dataset))
+            x_training = x[training_indices]
+            x_validation = x[validation_indices]
+            x_testing = x[testing_indices]
+
+            training_dataset = np.hstack((np.array([function(x_training.T)]).T, x_training))
+            validation_dataset = np.hstack((np.array([function(x_validation.T)]).T, x_validation))
+            testing_dataset = np.hstack((np.array([function(x_testing.T)]).T, x_testing))
+
+            datasets.append((base_function_string, training_dataset, validation_dataset, testing_dataset))
 
     return datasets
 
