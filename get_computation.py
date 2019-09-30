@@ -68,6 +68,37 @@ def get_computation_time(time, return_cycles_per_second=False):
         return adjusted_time
 
 
+def get_time(computation, return_cycles_per_second=False):
+    """Given th computation, get the time on the current
+    processor to achieve the give computation by finding
+    the processor speed.
+    
+    Parameters
+    ----------
+    computation : float
+        The desired computation
+    return_cycles_per_second : bool
+        If True, include return_cycles_per_second
+        in the return.
+
+    Returns
+    -------
+    time : float
+        The amount of time necessary to achieve the desired
+        computation.
+    """
+
+    cycles_per_second = get_cycles_per_second()
+
+    time = computation/cycles_per_second
+
+    if return_cycles_per_second:
+        return time, cycles_per_second
+
+    else:
+        return time
+
+
 if __name__ == '__main__':
 
     # 30 hours

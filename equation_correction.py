@@ -1,6 +1,6 @@
 import GeneticProgramming as GP
 from GeneticProgramming.protected_functions import *
-from get_computation import get_computation_time
+from get_computation import get_computation_time, get_time
 
 import numpy as np
 import pandas as pd
@@ -333,7 +333,7 @@ class EquationAdjustor:
 
 def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, debug_mode):
 
-    rng = np.random.RandomState(rep)
+    rng = np.random.RandomState(rep+exp)
 
     hidden_values = rng.uniform(-1, 1, size=10)
     hidden_weights = rng.uniform(-1, 1, size=(len(hidden_values), len(hidden_values)))
@@ -583,11 +583,68 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--debug_mode', help='Do not adjust timeout',
                         action='store_true')
 
+    parser.add_argument('-gp', '--genetic_programming', help='Compare with GP',
+                        action='store_true')
+
     args = parser.parse_args()
     print(args)
 
-    assert args.timeout is not None, 'Specify a time limit with -t or --timeout'
+    if args.genetic_programming:
 
-    train_equation_corrector(rep=args.rep, exp=args.exp, timeout=args.timeout,
-                             fixed_adjustments=False, horizontal=args.horizontal_shift,
-                             debug_mode=args.debug_mode)
+        print('genetic programming')
+
+        rng = np.random.RandomState(args.rep+args.exp)
+
+        # get dataset and timeout
+        path = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(args.exp))
+
+        df_dataset = pd.read_csv(os.path.join(path, 'testing_function_dataset0_rep'+str(args.rep)+'.csv'))
+
+        # get data from tidy format
+        # should be make more general soon
+        dataset = [df_dataset.loc[df_dataset['dataset'] == dataset_type].iloc[:, 1:].values for dataset_type in ['training', 'validation']]
+        test_data = df_dataset.loc[df_dataset['dataset'] == 'testing'].iloc[:, 1:].values
+
+        # with open(os.path.join(path, 'test_computation_rep'+str(args.rep)+'.txt'), mode='r') as f:
+        #     computation = float(f.read())
+
+        if args.debug_mode:
+            timeout = args.timeout
+            cycles_per_second = 1.6*10**9
+    
+        else:
+            timeout, cycles_per_second = get_computation_time(args.timeout, return_cycles_per_second=True)
+
+        # get output_path, output_file
+        output_path = os.path.join(path, 'gp')
+        output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
+        
+        params = {'T': timeout,
+                  'cycles_per_second': cycles_per_second,
+                  'save_pop_data': False}   # this should be a default...
+
+        gp = GP.GeneticProgramming(rng=rng,
+                                   pop_size=100,
+                                   primitive_set=['*', '+', '%', '-'],
+                                   terminal_set=['#x', '#f'],
+                                   # this is not data, which is passed
+                                   data=dataset,
+                                   test_data=test_data,
+                                   prob_mutate=1,
+                                   prob_xover=0,
+                                   num_vars=1,
+                                   mutation_param=2,
+                                   # parameters below
+                                   **params)
+
+        info = gp.run(rep=args.rep,
+                      output_path=output_path,
+                      output_file=output_file)
+
+    else:
+        print('equation adjuster')
+        assert args.timeout is not None, 'Specify a time limit with -t or --timeout'
+
+        train_equation_corrector(rep=args.rep, exp=args.exp, timeout=args.timeout,
+                                 fixed_adjustments=False, horizontal=args.horizontal_shift,
+                                 debug_mode=args.debug_mode)
