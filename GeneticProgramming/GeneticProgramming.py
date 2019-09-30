@@ -93,6 +93,7 @@ class GeneticProgramming:
         # This is the best individual based
         # on validation error.
         self.best_individual = (float('inf'), None)
+        self.start_time = time.time()
 
 
     def generate_population_ramped_half_and_half(self, size, init_max_depth):
@@ -522,6 +523,8 @@ class GeneticProgramming:
 
         print(info[-1])
 
+        best_data = []
+
         if self.save_pop_data:
 
             pop_data = []
@@ -567,6 +570,32 @@ class GeneticProgramming:
 
             print(info[-1])
 
+            # Save best individual based on validation error
+            lisp = self.best_individual[1].get_lisp_string(actual_lisp=True)
+
+            self.best_individual[1].evaluate_test_points(self.test_data)
+
+            best_data.append([i, lisp,
+                              self.best_individual[1].fitness[0],
+                              self.best_individual[0],
+                              self.best_individual[1].testing_fitness,
+                              (time.time()-self.start_time)*self.params['cycles_per_second']])
+
+            if i % 1000 == 0:
+
+                df_best = pd.DataFrame(best_data)
+                df_best.to_csv(os.path.join(output_path, 'best_data_rep'+str(rep)+'.csv'),
+                               index=False,
+                               header=['Generation',
+                                       's-expression',
+                                       'Training Error',
+                                       'Validation Error',
+                                       'Testing Error',
+                                       'Computation'],
+                               mode='a')
+
+                best_data = []
+
             if self.save_pop_data:
 
                 pop_data.extend(self.get_pop_data(i))
@@ -591,20 +620,16 @@ class GeneticProgramming:
         # Save additional data for the last generation.
         self.save_final_error(os.path.join(output_path, 'fitness_data_rep'+str(rep)+'_final'))
 
-        # Save best individual based on validation error
-        lisp = self.best_individual[1].get_lisp_string(actual_lisp=True)
-
-        self.best_individual[1].evaluate_test_points(self.test_data)
-
-        best_data = [lisp,
-                     self.best_individual[1].fitness[0],
-                     self.best_individual[0],
-                     self.best_individual[1].testing_fitness]
-
-        df_best = pd.DataFrame([best_data])
+        df_best = pd.DataFrame(best_data)
         df_best.to_csv(os.path.join(output_path, 'best_data_rep'+str(rep)+'.csv'),
                        index=False,
-                       header=['s-expression', 'Training Error', 'Validation Error', 'Testing Error'])
+                       header=['Generation',
+                               's-expression',
+                               'Training Error',
+                               'Validation Error',
+                               'Testing Error',
+                               'Computation'],
+                       mode='a')
 
         # save remaining pop data
         # This is necessary in case the total number
