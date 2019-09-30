@@ -586,7 +586,7 @@ class GeneticProgramming:
 
         # Save generational data
         df = pd.DataFrame(info)
-        df.to_csv(output_path + output_file, index=None, header=header)
+        df.to_csv(os.path.join(output_path, output_file), index=None, header=header)
 
         # Save additional data for the last generation.
         self.save_final_error(os.path.join(output_path, 'fitness_data_rep'+str(rep)+'_final'))
