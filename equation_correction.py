@@ -49,7 +49,6 @@ class EquationAdjustor:
 
         self.initial_adjustment = initial_adjustment
         self.initial_parameter = initial_parameter
-        self.num_adjustments = num_adjustments
 
         self.fixed_adjustments = fixed_adjustments
 
@@ -62,6 +61,13 @@ class EquationAdjustor:
         else:   # vertical shift
             self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string+'+'+str(c))
             self.num_output = 3
+
+        self.set_num_adjustments(num_adjustments)
+
+
+    def set_num_adjustments(self, num_adjustments):
+
+        self.num_adjustments = num_adjustments
 
         if self.fixed_adjustments:
             self.step = 0.
@@ -90,6 +96,9 @@ class EquationAdjustor:
 
         self.errors = [np.sqrt(np.mean(np.power(f(x.T)-y, 2)))]
         self.signed_error = np.mean(y-f(x.T))
+
+        self.cpu_start_time = time.process_time()
+        self.cpu_time = []
 
 
     def get_value(self, input_weights, hidden_weights, output_weights, input):
@@ -227,6 +236,8 @@ class EquationAdjustor:
             self.update_equation(function_string, dataset, w)
 
             self.adjustment -= self.step
+            # self.adjustment = abs(self.signed_error)
+            self.cpu_time.append(time.process_time()-self.cpu_start_time)
 
         fitness = self.errors[-1]/self.errors[0]
 
@@ -439,6 +450,8 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
     start_time = time.time()
 
+    # EA.set_num_adjustments(1000)
+
     errors_test_function, fitnesses_test_function = EA.cma_es_function(xopt, rng, datasets_test_functions,
                                                                        return_all_errors=True)
 
@@ -448,11 +461,11 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
         test_computation = test_time*cycles_per_second
 
-        with open(os.path.join(save_loc, 'test_computation_rep'+str(rep)+'.txt'), mode='w') as f:
-            f.write(str(test_computation))
+        with open(os.path.join(save_loc, 'test_computation_and_cycles_rep'+str(rep)+'.txt'), mode='w') as f:
+            f.write(str(test_computation)+' '+str(cycles_per_second))
 
     # save the best individual
-    data = [list(errors['training']), list(fitnesses['training']), list(errors['validation']), list(fitnesses['validation']), list(errors['testing']), list(fitnesses['testing']), list(errors_test_function['testing']), list(fitnesses_test_function['testing']), list(xopt), list(hidden_weights.flatten()), list(hidden_values)]
+    data = [list(errors['training']), list(fitnesses['training']), list(errors['validation']), list(fitnesses['validation']), list(fitnesses['testing']), list(fitnesses['testing']), list(EA.errors), list(EA.cpu_time), list(fitnesses_test_function['testing']), list(xopt), list(hidden_weights.flatten()), list(hidden_values)]
     df = pd.DataFrame(data).transpose()
     df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'.csv'), header=['train error',
                                                                               'train fitness',
@@ -461,6 +474,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
                                                                               'test error',
                                                                               'test fitness',
                                                                               'test error on test function',
+                                                                              'cpu time',
                                                                               'test fitness on test funciton',
                                                                               'trained weights',
                                                                               'untrained weights',
