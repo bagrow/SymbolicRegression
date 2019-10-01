@@ -93,7 +93,7 @@ class GeneticProgramming:
         # This is the best individual based
         # on validation error.
         self.best_individual = (float('inf'), None)
-        self.start_time = time.time()
+        self.start_process_time = time.process_time()
 
 
     def generate_population_ramped_half_and_half(self, size, init_max_depth):
@@ -579,7 +579,8 @@ class GeneticProgramming:
                               self.best_individual[1].fitness[0],
                               self.best_individual[0],
                               self.best_individual[1].testing_fitness,
-                              (time.time()-self.start_time)*self.params['cycles_per_second']])
+                              time.process_time()-self.start_process_time,
+                              (time.process_time()-self.start_process_time)*self.params['cycles_per_second']])
 
             if i % 1000 == 0:
 
@@ -591,6 +592,7 @@ class GeneticProgramming:
                                        'Training Error',
                                        'Validation Error',
                                        'Testing Error',
+                                       'CPU Time',
                                        'Computation'],
                                mode='a')
 
@@ -628,6 +630,7 @@ class GeneticProgramming:
                                'Training Error',
                                'Validation Error',
                                'Testing Error',
+                               'CPU Time',
                                'Computation'],
                        mode='a')
 
