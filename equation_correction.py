@@ -60,7 +60,7 @@ class EquationAdjustor:
 
         else:   # vertical shift
             self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string+'+'+str(c))
-            self.num_output = 3
+            self.num_output = 1
 
         self.set_num_adjustments(num_adjustments)
 
@@ -167,7 +167,7 @@ class EquationAdjustor:
 
         index = np.argmax(output)
 
-        return index
+        return index, output
 
 
     def update_equation(self, function_string, dataset, w):
@@ -189,11 +189,10 @@ class EquationAdjustor:
 
         prev_error = self.errors[-2] if len(self.errors) > 1 else 0.
 
-        self.index = self.evaluate_corrector_neural_network(w, error=self.errors[-1]/self.errors[0],
-                                                            signed_error=self.signed_error/self.errors[0],
-                                                            prev_error=prev_error/self.errors[0], 
-                                                            prev_index=self.index)
-
+        self.index, self.output = self.evaluate_corrector_neural_network(w, error=self.errors[-1]/self.errors[0],
+                                                                         signed_error=self.signed_error/self.errors[0],
+                                                                         prev_error=prev_error/self.errors[0], 
+                                                                         prev_index=self.index)
         # if self.errors[-1] < prev_error:
         #     pass
 
@@ -203,18 +202,24 @@ class EquationAdjustor:
         # else:
         #     self.index = 0
 
-        if self.index == 0:
-            self.parameter += self.adjustment
+        if self.horizontal:
 
-        elif self.index == 1:
-            self.parameter -= self.adjustment
+            if self.index == 0:
+                self.parameter += self.adjustment
 
-        elif self.index == 2:
-            pass # keep self.parameter the same
+            elif self.index == 1:
+                self.parameter -= self.adjustment
+
+            elif self.index == 2:
+                pass # keep self.parameter the same
+
+            else:
+                print('Unspecified option. index =', index)
+                exit()
 
         else:
-            print('Unspecified option. index =', index)
-            exit()
+
+            self.parameter += self.output[0]
 
         f = self.adjust_function(function_string, self.parameter)
 
@@ -344,12 +349,12 @@ class EquationAdjustor:
 
 def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, debug_mode):
 
-    rng = np.random.RandomState(rep+exp)
+    rng = np.random.RandomState(rep+100*exp)
 
     hidden_values = rng.uniform(-1, 1, size=10)
     hidden_weights = rng.uniform(-1, 1, size=(len(hidden_values), len(hidden_values)))
     num_input = 4 if horizontal else 1
-    num_output = 3 if not horizontal else 2
+    num_output = 1 if not horizontal else 2
 
     global best
 
@@ -366,7 +371,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
     sigma = 2.
     function_evals = float('inf')
-    seed = args.exp + args.rep + 1
+    seed = 100*args.exp + args.rep + 1
 
     activation = np.tanh
     initial_adjustment = 1.
@@ -607,7 +612,7 @@ if __name__ == '__main__':
 
         print('genetic programming')
 
-        rng = np.random.RandomState(args.rep+args.exp)
+        rng = np.random.RandomState(args.rep+100*args.exp)
 
         # get dataset and timeout
         path = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(args.exp))
@@ -634,22 +639,22 @@ if __name__ == '__main__':
         output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
         
         params = {'T': timeout,
-                  'cycles_per_second': cycles_per_second,
-                  'save_pop_data': False}   # this should be a default...
+                  'cycles_per_second': cycles_per_second}
 
-        gp = GP.GeneticProgramming(rng=rng,
-                                   pop_size=100,
-                                   primitive_set=['*', '+', '%', '-'],
-                                   terminal_set=['#x', '#f'],
-                                   # this is not data, which is passed
-                                   data=dataset,
-                                   test_data=test_data,
-                                   prob_mutate=1,
-                                   prob_xover=0,
-                                   num_vars=1,
-                                   mutation_param=2,
-                                   # parameters below
-                                   **params)
+        gp = GP.GeneticProgrammingAfpo(rng=rng,
+                                       pop_size=100,
+                                       max_gens=30000,
+                                       primitive_set=['*', '+', '%', '-'],
+                                       terminal_set=['#x', '#f'],
+                                       # this is not data, which is passed
+                                       data=dataset,
+                                       test_data=test_data,
+                                       prob_mutate=1,
+                                       prob_xover=0,
+                                       num_vars=1,
+                                       mutation_param=2,
+                                       # parameters below
+                                       **params)
 
         info = gp.run(rep=args.rep,
                       output_path=output_path,
