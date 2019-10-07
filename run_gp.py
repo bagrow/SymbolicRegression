@@ -79,7 +79,7 @@ primitive_set = ['+', '*', '-', '%']
 terminal_set = ['#x', '#f']
 
 
-def run_single(rng, pop_size, primitive_set, terminal_set,
+def run_single(rng, pop_size, max_gens, primitive_set, terminal_set,
                prob_mutate, prob_xover, mutation_param,
                rep, output_path, output_file, **params):
 
@@ -137,6 +137,7 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
     if params['size']:
         gp = GeneticProgramming(rng=rng,
                                 pop_size=pop_size,
+                                max_gens=max_gens,
                                 primitive_set=primitive_set,
                                 terminal_set=terminal_set,
                                 # this is not data, which is passed
@@ -151,6 +152,7 @@ def run_single(rng, pop_size, primitive_set, terminal_set,
     else:
         gp = GeneticProgrammingAfpo(rng=rng,
                                     pop_size=pop_size,
+                                    max_gens=max_gens,
                                     primitive_set=primitive_set,
                                     terminal_set=terminal_set,
                                     # this is not data, which is passed
@@ -190,6 +192,7 @@ if len(run_list) <= run_index:
 start = time.time()
 
 run_single(rng=np.random.RandomState(run_list[run_index] + exp), pop_size=population_size,
+           max_gens=max_generations,
            primitive_set=primitive_set,
            terminal_set=terminal_set, prob_mutate=1.,
            prob_xover=0.,

@@ -1,6 +1,6 @@
 from .Individual import Individual
-from .consts import *
 
+import numpy as np
 import pandas as pd
 
 import os
@@ -12,7 +12,7 @@ class GeneticProgramming:
     """This class is used to create a population of Individuals
     and evolve them to solve a particular dataset"""
 
-    def __init__(self, rng, pop_size, primitive_set, terminal_set, data,
+    def __init__(self, rng, pop_size, max_gens, primitive_set, terminal_set, data,
                  test_data, prob_mutate, prob_xover, num_vars=1,
                  init_max_depth=6, max_depth=17, individual=Individual,
                  mutation_param=3, **individual_params):
@@ -24,6 +24,8 @@ class GeneticProgramming:
             For example let rng=np.random.RandomState(0)
         pop_size : int
             Number of individuals to put in the population.
+        max_gens : int
+            Maximum number of generations
         primitive_set : list
             A list of all primitive (operators/functions)
             that may be used in trees.
@@ -57,6 +59,7 @@ class GeneticProgramming:
         self.max_depth = max_depth
         self.init_max_depth = init_max_depth
         self.pop_size = pop_size
+        self.max_gens = max_gens
         self.P = primitive_set
         self.T = terminal_set
         self.data = data
@@ -83,17 +86,27 @@ class GeneticProgramming:
         elif self.mutation_param == 9:
             self.mutation_param = self.rng.randint(4, 5)
 
-        self.save_pop_data = self.params['save_pop_data']
+        if 'save_pop_data' not in self.params:
+            self.save_pop_data = False
+
+        else:
+            self.save_pop_data = self.params['save_pop_data']
 
         if 'T' in self.params:
-
             self.timeout = self.params['T']
-            self.start_time = time.time()
+
+        else:
+            self.timeout = float('inf')
+        
+        self.start_time = time.time()
 
         # This is the best individual based
         # on validation error.
         self.best_individual = (float('inf'), None)
         self.start_process_time = time.process_time()
+
+        if 'cycles_per_second' not in self.params:
+            self.params['cycles_per_second'] = 0.
 
 
     def generate_population_ramped_half_and_half(self, size, init_max_depth):
@@ -552,15 +565,15 @@ class GeneticProgramming:
                           header=pop_data_header, index=None)
             info = []
 
-        num_xover = int(self.prob_xover * population_size)
+        num_xover = int(self.prob_xover * self.pop_size)
 
         if num_xover % 2 == 1:
             num_xover -= 1
 
-        num_mut = population_size-num_xover
+        num_mut = self.pop_size-num_xover
 
         # for a fixed number of generations
-        for i in range(1, max_generations+1):
+        for i in range(1, self.max_gens+1):
 
             # Do all the generation stuff --- mutate, evaluate...
             self.run_generation(i, num_mut=num_mut, num_xover=num_xover)

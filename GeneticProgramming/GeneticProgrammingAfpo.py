@@ -1,4 +1,5 @@
 from .GeneticProgramming import GeneticProgramming
+from .Individual import Individual
 
 import numpy as np
 
@@ -13,6 +14,22 @@ class GeneticProgrammingAfpo(GeneticProgramming):
     In: Riolo R., McConaghy T., Vladislavleva E. (eds) Genetic
     Programming Theory and Practice VIII. Genetic and Evolutionary
     Computation, vol 8. Springer, New York, NY"""
+
+
+    def __init__(self, rng, pop_size, max_gens, primitive_set, terminal_set, data,
+                 test_data, prob_mutate, prob_xover, num_vars=1,
+                 init_max_depth=6, max_depth=17, individual=Individual,
+                 mutation_param=3, **individual_params):
+
+        GeneticProgramming.__init__(self, rng=rng, pop_size=pop_size, max_gens=max_gens,
+                                    primitive_set=primitive_set, terminal_set=terminal_set, data=data,
+                                    test_data=test_data, prob_mutate=prob_mutate, prob_xover=prob_xover,
+                                    num_vars=num_vars, init_max_depth=init_max_depth, max_depth=max_depth,
+                                    individual=individual, mutation_param=mutation_param, **individual_params)
+
+        if 'AFSPO' not in self.params:
+            self.params['AFSPO'] = False
+
 
     def evaluate_individual(self, ind, data):
         """Evaluate the individual fitness and update
