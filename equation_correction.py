@@ -11,10 +11,39 @@ import argparse
 import os
 import time
 
+
+def get_variant_dict(variant_string):
+
+    variant_dict = {}
+
+    for x in variant_string.split('_'):
+
+        if x[-1] == '1':
+            value = True
+
+        elif x[-1] == '0':
+            value = False
+
+        else:
+            print('HOW DO I CONVERT THIS!~!!!>!>!>???', x)
+            exit()        
+
+        variant_dict[x[:-1]] = value
+
+    # check all variants are there
+    for v in ['MO', 'RO', 'PE', 'ED']:
+        if v not in variant_dict:
+            print('Not all variant modifiers accounted for.', v, 'is missing.')
+            exit()
+
+    return variant_dict
+
+
 class EquationAdjustor:
 
     def __init__(self, initial_hidden_values, hidden_weights, activation, horizontal,
-                 initial_adjustment, initial_parameter, num_adjustments, fixed_adjustments):
+                 initial_adjustment, initial_parameter, num_adjustments, fixed_adjustments,
+                 variant_string):
         """Initialize. Note that runnning this function does not create a full
         EquationAdjuster because it does not have input and output weights.
 
@@ -43,6 +72,9 @@ class EquationAdjustor:
             If true, the size of the adjustments are constant.
         """
 
+        self.variant = get_variant_dict(variant_string)
+        print(self.variant)
+        
         self.initial_hidden_values = initial_hidden_values
         self.hidden_weights = hidden_weights
         self.activation = activation
@@ -56,7 +88,7 @@ class EquationAdjustor:
 
         if self.horizontal:
             self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string.replace('x[0]', 'np.add(x[0],'+str(c)+')'))
-            self.num_output = 2
+            self.num_output = 2 if self.variant['MO'] else 1
 
         else:   # vertical shift
             self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string+'+'+str(c))
@@ -128,7 +160,7 @@ class EquationAdjustor:
         return output
 
 
-    def evaluate_corrector_neural_network(self, w, error, signed_error, prev_error, prev_index):
+    def evaluate_corrector_neural_network(self, w, error, signed_error, prev_error, prev_index, output):
         """Evaluate neural network that decides how to change the function.
 
         Parameters
@@ -149,7 +181,26 @@ class EquationAdjustor:
         num_hidden = len(self.hidden_values)
 
         if self.horizontal:
-            input = [prev_error, error, *np.eye(2)[int(prev_index)]]
+            
+            input = [error]
+
+            # prev error
+            if self.variant['PE']:
+                input.append(prev_error)
+
+            # error difference
+            if self.variant['ED']:
+                input.append(error - prev_error)
+
+            # if recursive output
+            if self.variant['RO']:
+
+                # if multiple output
+                if self.variant['MO']:
+                    input.extend(np.eye(2)[int(prev_index)])
+
+                else:
+                    input.append(output)
 
         else:
             input = [signed_error]
@@ -163,11 +214,11 @@ class EquationAdjustor:
         # Get the output weights. Output is one of three nodes.
         output_weights = w[num_hidden*len(input):].reshape((num_hidden, self.num_output))
 
-        output = self.get_value(input_weights, hidden_weights, output_weights, input)
+        new_output = self.get_value(input_weights, hidden_weights, output_weights, input)
 
-        index = np.argmax(output)
+        index = np.argmax(new_output)
 
-        return index, output
+        return index, new_output
 
 
     def update_equation(self, function_string, dataset, w):
@@ -187,23 +238,16 @@ class EquationAdjustor:
             The RMS error of the adjusted function
         """
 
-        prev_error = self.errors[-2] if len(self.errors) > 1 else 0.
+        prev_error = self.errors[-2] if len(self.errors) > 1 else self.errors[0]
         output = self.output[0] if hasattr(self, 'output') else 0.
 
         self.index, self.output = self.evaluate_corrector_neural_network(w, error=self.errors[-1]/self.errors[0],
                                                                          signed_error=self.signed_error/self.errors[0],
                                                                          prev_error=prev_error/self.errors[0], 
-                                                                         prev_index=self.index)
-        # if self.errors[-1] < prev_error:
-        #     pass
+                                                                         prev_index=self.index,
+                                                                         output=output)
 
-        # elif self.errors[-1] > prev_error:
-        #     self.index = (self.index + 1) % 2
-
-        # else:
-        #     self.index = 0
-
-        if self.horizontal:
+        if self.variant['MO']:
 
             if self.index == 0:
                 self.parameter += self.adjustment
@@ -370,7 +414,7 @@ class EquationAdjustor:
 # -------------------------------------------------------------------------- #
 
 
-def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, debug_mode, benchamrk_datasets, num_adjustments, max_shift):
+def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, debug_mode, benchamrk_datasets, num_adjustments, max_shift, variant_string):
 
     # define parameters
     num_targets = 50
@@ -403,8 +447,37 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
     hidden_values = rng.uniform(-1, 1, size=10)
     hidden_weights = rng.uniform(-1, 1, size=(len(hidden_values), len(hidden_values)))
-    num_input = 4 if horizontal else 1
-    num_output = 1 if not horizontal else 2
+
+    variant = get_variant_dict(variant_string)
+
+    if horizontal:
+
+        if variant['MO']:
+            num_output = 2
+
+        else:
+            num_output = 1
+
+        num_input = 1
+
+        if variant['RO']:
+
+            if variant['MO']:
+                num_input += 2
+
+            else:
+                num_input += 1
+
+        if variant['PE']:
+            num_input += 1
+
+        if variant['ED']:
+            num_input += 1
+
+    else:
+
+        num_input = 1
+        num_output = 1
 
     global best
 
@@ -443,10 +516,11 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
                     ('activation', activation.__name__),
                     ('initial adjustment', initial_adjustment),
                     ('initial parameter', initial_parameter),
-                    ('number of adjustments', num_adjustments)]
+                    ('number of adjustments', num_adjustments),
+                    ('variant string', variant_string)]
 
     df = pd.DataFrame(summary_data, columns=['Parameters', 'Values'])
-    df.to_csv(os.path.join(save_loc, 'summary_exp'+str(exp)+'.csv'))
+    df.to_csv(os.path.join(save_loc, 'summary_exp'+str(exp)+'_'+variant_string+'.csv'))
 
     # for i, (function_string, training_dataset, validation_dataset, testing_dataset) in enumerate(datasets_test_functions):
 
@@ -464,7 +538,8 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
                           initial_adjustment=initial_adjustment,
                           initial_parameter=initial_parameter, # should go in __init__. scaling will be 1
                           num_adjustments=num_adjustments,
-                          fixed_adjustments=fixed_adjustments)
+                          fixed_adjustments=fixed_adjustments,
+                          variant_string=variant_string)
 
     xopt, es = cma.fmin2(EA.cma_es_function, weights, sigma,
                          args=(rng, all_datasets, return_all_errors),
@@ -495,13 +570,13 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
         test_computation = test_time*cycles_per_second
 
-        with open(os.path.join(save_loc, 'test_computation_and_cycles_rep'+str(rep)+'.txt'), mode='w') as f:
+        with open(os.path.join(save_loc, 'test_computation_and_cycles_rep'+str(rep)+'_'+variant_string+'.txt'), mode='w') as f:
             f.write(str(test_computation)+' '+str(cycles_per_second))
 
     # save the best individual
     data = [list(xopt)]
     df = pd.DataFrame(data).transpose()
-    df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'.csv'), header=['trained weights'])
+    df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'_'+variant_string+'.csv'), header=['trained weights'])
                                                                               # 'untrained weights',
                                                                               # 'initial hidden values'])
     # save the best individual function validation info
@@ -510,7 +585,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
     table = [['Validation Function ' + str(i), f] for i, f in enumerate(fitnesses['validation'])]
 
     df = pd.DataFrame(table, columns=header)
-    df.to_csv(os.path.join(save_loc, 'best_ind_validation_rep'+str(rep)+'.csv'))
+    df.to_csv(os.path.join(save_loc, 'best_ind_validation_rep'+str(rep)+'_'+variant_string+'.csv'))
 
     # save the best individual function testing info
     header = ['Target', 'Adjustment', 'Test Error', 'CPU Time', 'Computation']
@@ -525,7 +600,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
 
     df = pd.DataFrame(table, columns=header)
-    df.to_csv(os.path.join(save_loc, 'best_ind_testing_rep'+str(rep)+'.csv'))
+    df.to_csv(os.path.join(save_loc, 'best_ind_testing_rep'+str(rep)+'_'+variant_string+'.csv'))
 
 
     # # save the best individual
@@ -726,6 +801,9 @@ if __name__ == '__main__':
     parser.add_argument('-gp', '--genetic_programming', help='Compare with GP',
                         action='store_true')
 
+    parser.add_argument('-vs', '--variant_string', help='The string that describes NN options',
+                        type=str)
+
     args = parser.parse_args()
     print(args)
 
@@ -793,4 +871,5 @@ if __name__ == '__main__':
         train_equation_corrector(rep=args.rep, exp=args.exp, timeout=args.timeout,
                                  fixed_adjustments=False, horizontal=args.horizontal_shift,
                                  debug_mode=args.debug_mode, benchamrk_datasets=benchamrk_datasets,
-                                 max_shift=max_shift, num_adjustments=num_adjustments)
+                                 max_shift=max_shift, num_adjustments=num_adjustments,
+                                 variant_string=args.variant_string)
