@@ -18,20 +18,28 @@ def get_variant_dict(variant_string):
 
     for x in variant_string.split('_'):
 
-        if x[-1] == '1':
-            value = True
+        if x[:2] == 'HL':
 
-        elif x[-1] == '0':
-            value = False
+            value = int(x[-1])
+
+            assert value >= 1, 'There must be at least 1 hidden layer in current implementation'
 
         else:
-            print('HOW DO I CONVERT THIS!~!!!>!>!>???', x)
-            exit()        
+
+            if x[-1] == '1':
+                value = True
+
+            elif x[-1] == '0':
+                value = False
+
+            else:
+                print('HOW DO I CONVERT THIS!~!!!>!>!>???', x)
+                exit()        
 
         variant_dict[x[:-1]] = value
 
     # check all variants are there
-    for v in ['MO', 'RO', 'PE', 'ED']:
+    for v in ['MO', 'RO', 'PE', 'ED', 'TS', 'HL']:
         if v not in variant_dict:
             print('Not all variant modifiers accounted for.', v, 'is missing.')
             exit()
@@ -41,7 +49,7 @@ def get_variant_dict(variant_string):
 
 class EquationAdjustor:
 
-    def __init__(self, initial_hidden_values, hidden_weights, activation, horizontal,
+    def __init__(self, rng, initial_hidden_values, hidden_weights, activation, horizontal,
                  initial_adjustment, initial_parameter, num_adjustments, fixed_adjustments,
                  variant_string):
         """Initialize. Note that runnning this function does not create a full
@@ -72,10 +80,18 @@ class EquationAdjustor:
             If true, the size of the adjustments are constant.
         """
 
+        self.rng = rng
+
         self.variant = get_variant_dict(variant_string)
         print(self.variant)
+
+        if self.variant['HL'] > 1:
+            self.initial_hidden_values = [initial_hidden_values] + [self.rng.uniform(-1, 1, size=len(initial_hidden_values)) for _ in range(self.variant['HL']-1)]
+
+        else:
+           self.initial_hidden_values = initial_hidden_values
         
-        self.initial_hidden_values = initial_hidden_values
+
         self.hidden_weights = hidden_weights
         self.activation = activation
 
@@ -114,6 +130,7 @@ class EquationAdjustor:
         initial values."""
 
         self.hidden_values = self.initial_hidden_values
+
         self.adjustment = self.initial_adjustment
         self.parameter = self.initial_parameter
 
@@ -133,7 +150,7 @@ class EquationAdjustor:
         self.cpu_time = []
 
 
-    def get_value(self, input_weights, hidden_weights, output_weights, input):
+    def get_value(self, input_weights, hidden_weights, output_weights, input, hidden_to_hidden_weights):
         """Compute the output given the input, hidden node
         values, and the weights.
 
@@ -154,13 +171,24 @@ class EquationAdjustor:
             The value of the nodes in the output layer.
         """
 
-        self.hidden_values = self.activation(np.matmul(input, input_weights))# + np.matmul(self.hidden_values, hidden_weights))
-        output = self.activation(np.matmul(self.hidden_values, output_weights))
+        if self.variant['HL'] > 1:
+
+            self.hidden_values[0] = self.activation(np.matmul(input, input_weights))# + np.matmul(self.hidden_values, hidden_weights))
+
+            for i, _ in enumerate(self.hidden_values[1:]):
+                self.hidden_values[i+1] = self.activation(np.matmul(self.hidden_values[i], hidden_to_hidden_weights[i]))# + np.matmul(self.hidden_values, hidden_weights))
+
+            output = self.activation(np.matmul(self.hidden_values[-1], output_weights))
+
+        else:
+
+            self.hidden_values = self.activation(np.matmul(input, input_weights))# + np.matmul(self.hidden_values, hidden_weights))
+            output = self.activation(np.matmul(self.hidden_values, output_weights))
 
         return output
 
 
-    def evaluate_corrector_neural_network(self, w, error, signed_error, prev_error, prev_index, output):
+    def evaluate_corrector_neural_network(self, w, timestep, error, signed_error, prev_error, prev_index, output):
         """Evaluate neural network that decides how to change the function.
 
         Parameters
@@ -178,11 +206,19 @@ class EquationAdjustor:
             way to alter the function.
         """
 
-        num_hidden = len(self.hidden_values)
+        if self.variant['HL'] > 1:
+            num_hidden = len(self.hidden_values[0])
+
+        else:
+            num_hidden = len(self.hidden_values)
 
         if self.horizontal:
-            
+
             input = [error]
+
+            # timestep (count down)
+            if self.variant['TS']:
+                input.append(1-timestep/self.num_adjustments)
 
             # prev error
             if self.variant['PE']:
@@ -211,17 +247,32 @@ class EquationAdjustor:
         # Get recurrent weights
         hidden_weights = self.hidden_weights
 
-        # Get the output weights. Output is one of three nodes.
-        output_weights = w[num_hidden*len(input):].reshape((num_hidden, self.num_output))
+        if self.variant['HL'] > 1:
 
-        new_output = self.get_value(input_weights, hidden_weights, output_weights, input)
+            # Get non-recurrent hidden weights
+            hidden_to_hidden_weights = []
+
+            for i, _ in enumerate(self.hidden_values[:-1]):
+
+                start = num_hidden*len(input) + i*num_hidden**2
+                end = start + num_hidden**2
+                hidden_to_hidden_weights.append(w[start:end].reshape((num_hidden, num_hidden)))
+
+        else:
+
+            hidden_to_hidden_weights = None
+
+        # Get the output weights. Output is one of three nodes.
+        output_weights = w[-num_hidden*self.num_output:].reshape((num_hidden, self.num_output))
+
+        new_output = self.get_value(input_weights, hidden_weights, output_weights, input, hidden_to_hidden_weights)
 
         index = np.argmax(new_output)
 
         return index, new_output
 
 
-    def update_equation(self, function_string, dataset, w):
+    def update_equation(self, timestep, function_string, dataset, w):
         """
 
         Parameters
@@ -241,7 +292,7 @@ class EquationAdjustor:
         prev_error = self.errors[-2] if len(self.errors) > 1 else self.errors[0]
         output = self.output[0] if hasattr(self, 'output') else 0.
 
-        self.index, self.output = self.evaluate_corrector_neural_network(w, error=self.errors[-1]/self.errors[0],
+        self.index, self.output = self.evaluate_corrector_neural_network(w, timestep, error=self.errors[-1]/self.errors[0],
                                                                          signed_error=self.signed_error/self.errors[0],
                                                                          prev_error=prev_error/self.errors[0], 
                                                                          prev_index=self.index,
@@ -277,13 +328,13 @@ class EquationAdjustor:
 
     def run_equation_corrector(self, function_string, dataset, w):
 
-        for _ in range(self.num_adjustments):
+        for timestep in range(self.num_adjustments):
 
             if self.adjustment < 0:
                 print('adjustment is negative! Stopping!')
                 exit()
 
-            self.update_equation(function_string, dataset, w)
+            self.update_equation(timestep, function_string, dataset, w)
 
             self.adjustment -= self.step
             # self.adjustment = abs(self.signed_error)
@@ -474,17 +525,22 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
         if variant['ED']:
             num_input += 1
 
+        if variant['TS']:
+            num_input += 1
+
     else:
 
         num_input = 1
         num_output = 1
+
+    additional_hidden_weights = (variant['HL']-1)*len(hidden_values)**2 
 
     global best
 
     # best = (error, weights)
     best = (float('inf'), None)
 
-    weights = rng.uniform(-1, 1, size=num_input*len(hidden_values)+len(hidden_values)*num_output)
+    weights = rng.uniform(-1, 1, size=num_input*len(hidden_values)+len(hidden_values)*num_output+additional_hidden_weights)
 
     # get data
     datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, fixed_adjustments)
@@ -531,7 +587,8 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
     #     df.to_csv(os.path.join(save_loc, 'testing_function_dataset'+str(i)+'_rep'+str(rep)+'.csv'), index=False)
 
-    EA = EquationAdjustor(initial_hidden_values=hidden_values,
+    EA = EquationAdjustor(rng=rng,
+                          initial_hidden_values=hidden_values,
                           hidden_weights=hidden_weights,
                           activation=np.tanh,
                           horizontal=horizontal,
@@ -547,6 +604,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
                                   # 'ftarget': 1e-10,
                                   'tolfun': 0,
                                   # 'tolfunhist': 0,
+                                  # 'popsize': 1000,
                                   'seed': seed,
                                   'verb_log': 0,
                                   'timeout': timeout},
@@ -803,6 +861,8 @@ if __name__ == '__main__':
 
     parser.add_argument('-vs', '--variant_string', help='The string that describes NN options',
                         type=str)
+    parser.add_argument('-b', '--benchmark_index', help='Sets the benchmark to try to solve.',
+                        type=int)
 
     args = parser.parse_args()
     print(args)
@@ -815,54 +875,63 @@ if __name__ == '__main__':
     else:
         max_shift = 5
 
+    target_names = ['quartic', 'septic', 'nonic', 'keijzer11', 'keijzer12', 'keijzer13', 'keijzer14',
+                    'keijzer15', 'r1', 'r2', 'r3']
+
     benchamrk_datasets = get_benchmark_datasets(np.random.RandomState(args.rep+100*args.exp), max_shift, args.horizontal_shift)
 
     if args.genetic_programming:
 
         print('genetic programming')
 
-        for function in benchamrk_datasets:
+        assert args.benchmark_index is not None, 'If using genetic programming, must specify --benchmark_index (-b)'
 
-            rng = np.random.RandomState(args.rep+100*args.exp)
+        assert 0 <= args.benchmark_index < len(benchamrk_datasets), '--benchmark_index (-b) too large or too small'
 
-            path = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(args.exp))
+        # get the name from list rather than benchmark_datasets,
+        # which is a dict
+        function = target_names[args.benchmark_index]
 
-            # dataset is the training dataset and validation dataset
-            dataset = [benchamrk_datasets[function][0][1], benchamrk_datasets[function][0][2]]
-            test_data = benchamrk_datasets[function][0][3]
+        rng = np.random.RandomState(args.rep+100*args.exp)
 
-            if args.debug_mode:
-                timeout = args.timeout
-                cycles_per_second = 1.6*10**9
+        path = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(args.exp))
+
+        # dataset is the training dataset and validation dataset
+        dataset = [benchamrk_datasets[function][0][1], benchamrk_datasets[function][0][2]]
+        test_data = benchamrk_datasets[function][0][3]
+
+        if args.debug_mode:
+            timeout = args.timeout
+            cycles_per_second = 1.6*10**9
+    
+        else:
+            timeout, cycles_per_second = get_computation_time(args.timeout, return_cycles_per_second=True)
+
+        # get output_path, output_file
+        output_path = os.path.join(path, 'gp', function)
+        output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
         
-            else:
-                timeout, cycles_per_second = get_computation_time(args.timeout, return_cycles_per_second=True)
+        params = {'T': timeout,
+                  'cycles_per_second': cycles_per_second}
 
-            # get output_path, output_file
-            output_path = os.path.join(path, 'gp', function)
-            output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
-            
-            params = {'T': timeout,
-                      'cycles_per_second': cycles_per_second}
+        gp = GP.GeneticProgrammingAfpo(rng=rng,
+                                       pop_size=100,
+                                       max_gens=30000,
+                                       primitive_set=['*', '+', '%', '-'],
+                                       terminal_set=['#x', '#f'],
+                                       # this is not data, which is passed
+                                       data=dataset,
+                                       test_data=test_data,
+                                       prob_mutate=1,
+                                       prob_xover=0,
+                                       num_vars=1,
+                                       mutation_param=2,
+                                       # parameters below
+                                       **params)
 
-            gp = GP.GeneticProgrammingAfpo(rng=rng,
-                                           pop_size=100,
-                                           max_gens=30000,
-                                           primitive_set=['*', '+', '%', '-'],
-                                           terminal_set=['#x', '#f'],
-                                           # this is not data, which is passed
-                                           data=dataset,
-                                           test_data=test_data,
-                                           prob_mutate=1,
-                                           prob_xover=0,
-                                           num_vars=1,
-                                           mutation_param=2,
-                                           # parameters below
-                                           **params)
-
-            info = gp.run(rep=args.rep,
-                          output_path=output_path,
-                          output_file=output_file)
+        info = gp.run(rep=args.rep,
+                      output_path=output_path,
+                      output_file=output_file)
 
     else:
         print('equation adjuster')
