@@ -557,6 +557,17 @@ class GeneticProgramming:
                   'Minimum Validation Error', 'Average Validation Error', 'Median Validation Error',
                   'Maximum Validation Error']
 
+        df_best_ind = pd.DataFrame([], columns=['Generation',
+                                                's-expression',
+                                                'Training Error',
+                                                'Validation Error',
+                                                'Testing Error',
+                                                'CPU Time',
+                                                'Computation'])
+
+        df_best_ind.to_csv(os.path.join(output_path, 'best_data_rep'+str(rep)+'.csv'),
+                            index=None)
+
         if self.save_pop_data:
 
             pop_data_header = ['Generation', 'Index', 'Root Mean Squared Error', 'Age', 'Equation']
@@ -600,13 +611,7 @@ class GeneticProgramming:
                 df_best = pd.DataFrame(best_data)
                 df_best.to_csv(os.path.join(output_path, 'best_data_rep'+str(rep)+'.csv'),
                                index=False,
-                               header=['Generation',
-                                       's-expression',
-                                       'Training Error',
-                                       'Validation Error',
-                                       'Testing Error',
-                                       'CPU Time',
-                                       'Computation'],
+                               header=None,
                                mode='a')
 
                 best_data = []
@@ -638,13 +643,7 @@ class GeneticProgramming:
         df_best = pd.DataFrame(best_data)
         df_best.to_csv(os.path.join(output_path, 'best_data_rep'+str(rep)+'.csv'),
                        index=False,
-                       header=['Generation',
-                               's-expression',
-                               'Training Error',
-                               'Validation Error',
-                               'Testing Error',
-                               'CPU Time',
-                               'Computation'],
+                       header=None,
                        mode='a')
 
         # save remaining pop data

@@ -49,7 +49,7 @@ args = parser.parse_args()
 print(args)
 
 key = args.func    # target function to use
-run_index = args.rep - 1
+run_index = args.rep
 
 exp = args.exp
 
