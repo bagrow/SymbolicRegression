@@ -76,6 +76,17 @@ class GeneticProgramming:
 
         self.pop = self.generate_population_ramped_half_and_half(self.pop_size, self.init_max_depth)
 
+        if 'given_individual' in self.params:
+
+            index = self.rng.choice(len(self.pop))
+
+            ind = self.Individual(self.rng, self.P, self.T, num_vars=self.num_vars,
+                                  max_depth=self.max_depth, tree=self.params['given_individual'],
+                                  **self.params)
+
+            self.pop[index] = ind
+            self.descendants_of_given_individual = [ind.get_lisp_string()]
+
         # mutation parameter stuff
         if self.mutation_param == 7:
             self.mutation_param = self.rng.randint(1, 6)
@@ -388,7 +399,7 @@ class GeneticProgramming:
                 self.pop[i].parentID = None
 
 
-    def run_generation(self, gen, num_mut, num_xover):
+    def run_generation(self, gen, rep, output_path, num_mut, num_xover):
         """Stuff to repeat every generation.
 
         Parameters
@@ -610,7 +621,7 @@ class GeneticProgramming:
         for i in range(1, self.max_gens+1):
 
             # Do all the generation stuff --- mutate, evaluate...
-            self.run_generation(i, num_mut=num_mut, num_xover=num_xover)
+            self.run_generation(i, rep=rep, output_path=output_path, num_mut=num_mut, num_xover=num_xover)
 
             info.append(self.get_fitness_info(self.pop))
             info[-1].insert(0, i)

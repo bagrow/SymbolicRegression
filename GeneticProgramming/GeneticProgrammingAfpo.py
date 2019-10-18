@@ -3,6 +3,8 @@ from .Individual import Individual
 
 import numpy as np
 
+import os
+
 
 class GeneticProgrammingAfpo(GeneticProgramming):
     """This class inherits GeneticProgramming.
@@ -76,7 +78,7 @@ class GeneticProgrammingAfpo(GeneticProgramming):
         return ind
 
 
-    def run_generation(self, gen, num_mut, num_xover):
+    def run_generation(self, gen, rep, output_path, num_mut, num_xover):
         """Double the size of the population. Then, remove
         individuals via binary tournament selection.
 
@@ -138,6 +140,11 @@ class GeneticProgrammingAfpo(GeneticProgramming):
 
                 child = self.size_fair_crossover(xover_parents[xover_count])
 
+                # if at least one descendant, get its children
+                if self.descendants_of_given_individual:
+                    if xover_parents[xover_count][0].get_lisp_string() in self.descendants_of_given_individual or xover_parents[xover_count][1].get_lisp_string() in self.descendants_of_given_individual:
+                        self.descendants_of_given_individual.append(new_ind.get_lisp_string())
+
                 self.pop.append(child)
                 xover_count += 1
 
@@ -148,6 +155,11 @@ class GeneticProgrammingAfpo(GeneticProgramming):
 
                 # Save the parent ID, so we can look at linage later on.
                 new_ind.parentID = mut_parents[mut_count].id
+
+                # if at least one descendant, get its mutants
+                if self.descendants_of_given_individual:
+                    if mut_parents[mut_count].get_lisp_string() in self.descendants_of_given_individual:
+                        self.descendants_of_given_individual.append(new_ind.get_lisp_string())
 
                 # Put new individual in the population.
                 self.pop.append(new_ind)
@@ -178,6 +190,26 @@ class GeneticProgrammingAfpo(GeneticProgramming):
                     exit()
 
                 num_iterations += 1
+
+            # Update descendant list by removing individuals that no longer exist
+            if self.descendants_of_given_individual:
+
+                lisp = self.pop[i_loser].get_lisp_string()
+
+                try:
+
+                    self.descendants_of_given_individual.remove(lisp)
+
+                    # This is the first generation that there
+                    # no descendants since this list will never
+                    # grow if it becomes empty.
+                    if not self.descendants_of_given_individual:
+                        
+                        with open(os.path.join(output_path, 'generation_no_more_descendants_rep'+str(rep)+'.txt'), 'w') as f:
+                            f.write(str(gen))
+
+                except ValueError:
+                    pass
 
             del self.pop[i_loser]
 
