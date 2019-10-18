@@ -750,6 +750,60 @@ class Tree:
             return node_list
 
 
+    def get_num_leaves(self, return_num_nodes=False, prefix=(), num_leaves=0, num_nodes=0, subtree=None):
+        """Get a number of leaves in the tree and optionally the
+        number nodes below subtree (including itself).
+        Each node is represented by an iterable of child indices.
+        For example, [0, 1, 1] refers to the 0-th child's 1-st child's
+        1-st child. The parameters are mostly for recursion,
+        and in most instances need not be specified.
+
+        Parameters
+        ----------
+        return_num_nodes : bool (default=False)
+            If true, return the num_nodes in addition to
+            the number of leaves
+        prefix : tuple (default=())
+            For recursion. This argument keeps track of the
+            child indices. It is named prefix because it is
+            appended to with the new child nodes.
+        leaf_list : list (optional)
+            For recursion. This argument keeps track of the
+            leaves already found.
+        subtree : list of lists (default=self.tree)
+            The subtree to search through to find all nodes.
+
+        Returns
+        -------
+        num_leaves : int
+            The number of leaves in the tree
+        num_nodes : int (optional)
+            The number of nodes in the tree
+
+        Examples
+        --------
+        >>> tree = GP.Tree('(- (3) (+ (x0) (3)))')
+        >>> num_leaves, num_nodes = tree.get_num_leaf(return_num_nodes=True)
+        (3, 5)
+        """
+
+        subtree = self.tree if subtree is None else subtree
+
+        # if subtree is a single node
+        if len(subtree) == 1:
+            return num_leaves+1, num_nodes+1
+
+        else:
+            for i, st in enumerate(subtree):
+
+                if type(st) == list:
+                    num_leaves, num_nodes = self.get_num_leaves(prefix=(*prefix, i-1), num_leaves=num_leaves, num_nodes=num_nodes, subtree=st)
+
+            num_nodes += 1
+            
+            return num_leaves, num_nodes
+
+
     def get_node_dict(self, prefix=(), node_dict=None, subtree=None):
         """Get a dictionary of all nodes in subtree. Each node is
         represented by a label and a list of child indices.

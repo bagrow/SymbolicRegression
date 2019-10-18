@@ -108,6 +108,8 @@ class GeneticProgramming:
         if 'cycles_per_second' not in self.params:
             self.params['cycles_per_second'] = 0.
 
+        self.number_of_operations = 0
+
 
     def generate_population_ramped_half_and_half(self, size, init_max_depth):
         """Generate the population using the ramped half and half method.
@@ -508,6 +510,25 @@ class GeneticProgramming:
                               'Objective 2 on Training Data'])
 
 
+    def get_num_ops_for_current_generation(self):
+
+        # Get number of floating point operations in this generation
+        # and increase self.number_of_operations by the amounts
+        num_ops_tree_single_eval =  []
+
+        for p in self.pop:
+
+            num_leaves, num_nodes = p.get_num_leaves(num_nodes=True)
+            num_nonleaves = num_nodes - num_leaves
+            num_ops_tree_single_eval.append(num_nonleaves)
+
+        num_ops_per_RMSE = 3*len(self.data[0]) + 1
+
+        total_for_each_tree = [x*len(self.data[0]) + num_ops_per_RMSE for x in num_ops_tree_single_eval]
+
+        return sum(total_for_each_tree)
+
+
     def run(self, rep, output_path=os.environ['GP_DATA'],
             output_file='fitness_data.csv'):
         """Run the given number of generations with the given parameters.
@@ -537,6 +558,8 @@ class GeneticProgramming:
         print(info[-1])
 
         best_data = []
+
+        self.number_of_operations += self.get_num_ops_for_current_generation()
 
         if self.save_pop_data:
 
@@ -594,6 +617,8 @@ class GeneticProgramming:
 
             print(info[-1])
 
+            self.number_of_operations += self.get_num_ops_for_current_generation()
+
             # Save best individual based on validation error
             lisp = self.best_individual[1].get_lisp_string(actual_lisp=True)
 
@@ -604,7 +629,8 @@ class GeneticProgramming:
                               self.best_individual[0],
                               self.best_individual[1].testing_fitness,
                               time.process_time()-self.start_process_time,
-                              (time.process_time()-self.start_process_time)*self.params['cycles_per_second']])
+                              # (time.process_time()-self.start_process_time)*self.params['cycles_per_second']])
+                              self.number_of_operations])
 
             if i % 1000 == 0:
 

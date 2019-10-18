@@ -137,6 +137,14 @@ class TestTree(unittest.TestCase):
         self.assertEqual(parent, (1,))
 
 
+    def test_get_num_leaves(self):
+
+        tree = GP.Tree('(- (3) (+ (x0) (3)))')
+        counts = tree.get_num_leaves(return_num_nodes=True)
+
+        self.assertEqual(counts, (3, 5))
+
+
 def setup_individual():
 
     I = GP.Individual(np.random.RandomState(0),
