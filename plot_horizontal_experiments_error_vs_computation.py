@@ -76,7 +76,7 @@ def remove_duplicates(x1, x2):
 
     return x1[indices], x2[indices]
 
-exp = 7
+exp = 16
 nreps = 30
 
 save_path = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp), 'figures')
@@ -84,13 +84,13 @@ save_path = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment
 if not os.path.exists(save_path):
     os.makedirs(save_path)
 
-experiments = [ 'MO1_RO0_PE0_ED0',
-                'MO1_RO0_PE1_ED0',
-                'MO1_RO1_PE1_ED0',
-                'MO0_RO1_PE1_ED0',
-                'MO0_RO1_PE0_ED1',
-                'MO0_RO0_PE0_ED1',
-                'MO0_RO0_PE1_ED0']
+experiments = [ 'MO1_RO0_PE0_ED0_TS0_HL2',
+                'MO1_RO0_PE1_ED0_TS0_HL2',
+                'MO1_RO1_PE1_ED0_TS0_HL2',
+                'MO0_RO1_PE1_ED0_TS0_HL2',
+                'MO0_RO1_PE0_ED1_TS0_HL2',
+                'MO0_RO0_PE0_ED1_TS0_HL2',
+                'MO0_RO0_PE1_ED0_TS0_HL2']
 
 data = {}
 
@@ -105,6 +105,8 @@ boxplot_data = []
 
 for function_name in ['quartic', 'septic', 'nonic', 'keijzer11', 'keijzer12', 'keijzer13', 'keijzer14',
                       'keijzer15', 'r1', 'r2', 'r3']:
+
+    boxplot_data = []
 
     for i, variant in enumerate(data):
 
@@ -140,14 +142,32 @@ for function_name in ['quartic', 'septic', 'nonic', 'keijzer11', 'keijzer12', 'k
         plt.legend(by_label.values(), by_label.keys())
 
         # plt.show()
+        plt.title(function_name)
         plt.savefig(os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp), 'figures', 'ea_gp_comp_'+function_name+'.pdf'))
 
-        plt.figure()
-        plt.boxplot(boxplot_data)
-        plt.yscale('log')
-        plt.xticks(list(range(len(data))), list(data.keys()), rotation=45)
-        plt.tight_layout()
-        plt.savefig(os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp), 'figures', 'ea_boxplots_'+function_name+'.pdf'))
+    plt.figure()
+    plt.boxplot(boxplot_data)
+    plt.yscale('log')
+    plt.xticks(list(range(len(data))), list(data.keys()), rotation=45)
+    plt.ylabel('Testing Errror')
+    plt.title(function_name)
+    plt.tight_layout()
+    plt.savefig(os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp), 'figures', 'ea_boxplots_'+function_name+'.pdf'))
+
+    print(function_name)
+
+    index = 2
+
+    for i, b in enumerate(boxplot_data):
+
+        if index == i:
+            continue
+
+        stat, pvalue = scipy.stats.mannwhitneyu(boxplot_data[index], b, alternative='less')
+
+        print(experiments[index], '<', experiments[i], pvalue*(len(experiments)-1))
+
+    print('')
 
         # compare (p-value) test values at max computation for EA
         # ea_test_final = [data_ea['test error'][rep][-1] for rep in data_ea['test error']]
