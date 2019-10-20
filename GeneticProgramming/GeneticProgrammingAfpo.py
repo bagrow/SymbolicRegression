@@ -94,18 +94,6 @@ class GeneticProgrammingAfpo(GeneticProgramming):
             crossover.
         """
 
-        # keep track of best individual
-        for p in self.pop:
-
-            if p.validation_fitness < self.best_individual[0]:
-
-                self.best_individual = (p.validation_fitness, p)
-
-            elif p.validation_fitness == self.best_individual[1].get_tree_size():
-
-                if p.get_tree_size() < self.best_individual[1].get_tree_size():
-                    self.best_individual = (p.validation_fitness, p)
-
         xover_parents = self.rng.choice(self.pop, size=(num_xover, 2))
         mut_parents = self.rng.choice(self.pop, size=num_mut)
 
@@ -196,20 +184,26 @@ class GeneticProgrammingAfpo(GeneticProgramming):
 
                 lisp = self.pop[i_loser].get_lisp_string()
 
-                try:
+                # If the individual is not the current best individual
+                # remove it. I do not expect the current best individual
+                # to get deleted from the population, but just in case,
+                # we make this check.
+                if lisp != self.best_individual.get_lisp_string():
 
-                    self.descendants_of_given_individual.remove(lisp)
+                    try:
 
-                    # This is the first generation that there
-                    # no descendants since this list will never
-                    # grow if it becomes empty.
-                    if not self.descendants_of_given_individual:
-                        
-                        with open(os.path.join(output_path, 'generation_no_more_descendants_rep'+str(rep)+'.txt'), 'w') as f:
-                            f.write(str(gen))
+                        self.descendants_of_given_individual.remove(lisp)
 
-                except ValueError:
-                    pass
+                        # This is the first generation that there
+                        # no descendants since this list will never
+                        # grow if it becomes empty.
+                        if not self.descendants_of_given_individual:
+                            
+                            with open(os.path.join(output_path, 'generation_no_more_descendants_rep'+str(rep)+'.txt'), 'w') as f:
+                                f.write(str(gen))
+
+                    except ValueError:
+                        pass
 
             del self.pop[i_loser]
 

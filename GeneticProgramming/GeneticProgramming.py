@@ -87,6 +87,9 @@ class GeneticProgramming:
             self.pop[index] = ind
             self.descendants_of_given_individual = [ind.get_lisp_string()]
 
+        else:
+            self.descendants_of_given_individual = []
+
         # mutation parameter stuff
         if self.mutation_param == 7:
             self.mutation_param = self.rng.randint(1, 6)
@@ -113,7 +116,7 @@ class GeneticProgramming:
 
         # This is the best individual based
         # on validation error.
-        self.best_individual = (float('inf'), None)
+        self.best_individual = None
         self.start_process_time = time.process_time()
 
         if 'cycles_per_second' not in self.params:
@@ -414,18 +417,6 @@ class GeneticProgramming:
             crossover.
         """
 
-        # keep track of best individual
-        for p in self.pop:
-
-            if p.validation_fitness < self.best_individual[0]:
-
-                self.best_individual = (p.validation_fitness, p)
-
-            elif p.validation_fitness == self.best_individual[1].get_tree_size():
-
-                if p.get_tree_size() < self.best_individual[1].get_tree_size():
-                    self.best_individual = (p.validation_fitness, p)
-
         # Make a dictionary of front individuals. Keep key as index.
         self.get_non_dominated_front()
 
@@ -540,6 +531,25 @@ class GeneticProgramming:
         return sum(total_for_each_tree)
 
 
+    def update_best_individual(self):
+        """Look through current population and if one
+        individual has lower validation error than the current
+        best (or there is not current best), update the best
+        individual."""
+
+        for p in self.pop:
+
+                if self.best_individual is None:
+                    self.best_individual = p
+                
+                elif p.validation_fitness < self.best_individual.validation_fitness:
+                    self.best_individual = p
+
+                elif p.validation_fitness == self.best_individual.get_tree_size():
+                    if p.get_tree_size() < self.best_individual.get_tree_size():
+                        self.best_individual = p
+
+
     def run(self, rep, output_path=os.environ['GP_DATA'],
             output_file='fitness_data.csv'):
         """Run the given number of generations with the given parameters.
@@ -561,6 +571,7 @@ class GeneticProgramming:
 
         # compute fitness and save data for generation 0 (random individuals)
         self.compute_fitness()
+        self.update_best_individual()
 
         info = []
         info.append(self.get_fitness_info(self.pop))
@@ -623,6 +634,9 @@ class GeneticProgramming:
             # Do all the generation stuff --- mutate, evaluate...
             self.run_generation(i, rep=rep, output_path=output_path, num_mut=num_mut, num_xover=num_xover)
 
+            # keep track of best individual
+            self.update_best_individual()
+
             info.append(self.get_fitness_info(self.pop))
             info[-1].insert(0, i)
 
@@ -631,14 +645,14 @@ class GeneticProgramming:
             self.number_of_operations += self.get_num_ops_for_current_generation()
 
             # Save best individual based on validation error
-            lisp = self.best_individual[1].get_lisp_string(actual_lisp=True)
+            lisp = self.best_individual.get_lisp_string(actual_lisp=True)
 
-            self.best_individual[1].evaluate_test_points(self.test_data)
+            self.best_individual.evaluate_test_points(self.test_data)
 
             best_data.append([i, lisp,
-                              self.best_individual[1].fitness[0],
-                              self.best_individual[0],
-                              self.best_individual[1].testing_fitness,
+                              self.best_individual.fitness[0],
+                              self.best_individual,
+                              self.best_individual.testing_fitness,
                               time.process_time()-self.start_process_time,
                               # (time.process_time()-self.start_process_time)*self.params['cycles_per_second']])
                               self.number_of_operations])
