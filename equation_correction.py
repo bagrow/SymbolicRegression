@@ -680,24 +680,24 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
 def get_benchmark_datasets(rng, max_shift, horizontal):
 
-    target_names = ['quartic', 'septic', 'nonic', 'keijzer11', 'keijzer12', 'keijzer13', 'keijzer14',
-                    'keijzer15', 'r1', 'r2', 'r3']
+    # target_names = ['quartic', 'septic', 'nonic', 'keijzer11', 'keijzer12', 'keijzer13', 'keijzer14',
+    #                 'keijzer15', 'r1', 'r2', 'r3']
 
-    target_strings = ['x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0])))',
-                      'x[0] * (1 - x[0] * (2 - x[0] * (1 - x[0] * (1 - x[0] * (1 - x[0] * (2 - x[0]))))))',
-                      'x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0]))))))))',
-                      '(x[0] * x[1]) + np.sin((x[0] - 1) * (x[1] - 1))',
-                      'x[0] ** 4 - x[0] ** 3 + (x[1] ** 2 / 2.0) - x[1]',
-                      '6 * np.sin(x[0]) * np.cos(x[1])',
-                      '8.0 / (2 + x[0] ** 2 + x[1] ** 2)',
-                      '(x[0] ** 3 / 5.0) + (x[1] ** 3 / 2.0) - x[0] - x[1]',
-                      '((x[0] + 1) ** 3) / (x[0] ** 2 - x[0] + 1)',
-                      '(x[0] ** 5 - (3 * (x[0] ** 3)) + 1) / (x[0] ** 2 + 1)',
-                      '(x[0] ** 6 + x[0] ** 5) / (x[0] ** 4 + x[0] ** 3 + x[0] ** 2 + x[0] + 1)']
+    target_strings = {'quartic': 'x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0])))',
+                      'septic': 'x[0] * (1 - x[0] * (2 - x[0] * (1 - x[0] * (1 - x[0] * (1 - x[0] * (2 - x[0]))))))',
+                      'nonic': 'x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0]))))))))',
+                      'keijzer11': '(x[0] * x[1]) + np.sin((x[0] - 1) * (x[1] - 1))',
+                      'keijzer12': 'x[0] ** 4 - x[0] ** 3 + (x[1] ** 2 / 2.0) - x[1]',
+                      'keijzer13': '6 * np.sin(x[0]) * np.cos(x[1])',
+                      'keijzer14': '8.0 / (2 + x[0] ** 2 + x[1] ** 2)',
+                      'keijzer15': '(x[0] ** 3 / 5.0) + (x[1] ** 3 / 2.0) - x[0] - x[1]',
+                      'r1': '((x[0] + 1) ** 3) / (x[0] ** 2 - x[0] + 1)',
+                      'r2': '(x[0] ** 5 - (3 * (x[0] ** 3)) + 1) / (x[0] ** 2 + 1)',
+                      'r3': '(x[0] ** 6 + x[0] ** 5) / (x[0] ** 4 + x[0] ** 3 + x[0] ** 2 + x[0] + 1)'}
 
     benchamrk_datasets = {}
 
-    for i, (f_name, f_func) in enumerate(zip(target_names, target_strings)):
+    for f_name, f_func in target_strings.items():
     
         shift = rng.uniform(0, max_shift)
 
@@ -911,8 +911,22 @@ if __name__ == '__main__':
         output_path = os.path.join(path, 'gp', function)
         output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
         
+        lisps = {'quartic': '(* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))',
+                 'septic': '(* (x0) (+ (1) (* (x0) (+ (-2) (* (x0) (+ (1) (* (x0) (+ (-1) (* (x0) (+ (1) (* (x0) (+ (-2) (x0)))))))))))))',
+                 'nonic': '(* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))))))))))))',
+                 'r1': '(% (* (+ (x0) (1)) (* (+ (x0) (1)) (+ (x0) (1)))) (+ (1) (* (x0) (+ (-1) (x0)))))',
+                 'r2': '(% (+ (* (* (* (x0) (x0)) (x0)) (- (* (x0) (x0)) (3))) (1)) (+ (* (x0) (x0)) (1)))',
+                 'r3': '(% (* (* (* (* (x0) (x0)) (x0)) (* (x0) (x0))) (+ (1) (x0))) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))))',
+                 'keijzer11': '(+ (* (x0) (x1)) (sin (* (- (x0) (1)) (- (x1) (1)))))',
+                 'keijzer12': '(+ (* (* (* (x0) (x0)) (x0)) (- (x0) (1))) (* (x1) (- (* (0.5) (x1)) (1))))',
+                 'keijzer13': '(* (6) (* (sin (x0)) (cos (x1))))',
+                 'keijzer14': '(% (8) (+ (2) (+ (* (x0) (x0)) (* (x1) (x1)))))',
+                 'keijzer15': '(+ (* (x0) (- (* (0.2) (* (x0) (x0))) (1))) (* (x1) (- (* (0.5) (* (x1) (x1))) (1))))'}
+
+
         params = {'T': timeout,
-                  'cycles_per_second': cycles_per_second}
+                  'cycles_per_second': cycles_per_second,
+                  'given_individual': lisps[function]}
 
         gp = GP.GeneticProgrammingAfpo(rng=rng,
                                        pop_size=100,
