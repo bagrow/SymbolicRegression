@@ -111,13 +111,19 @@ class GeneticProgramming:
 
         else:
             self.timeout = float('inf')
+
+
+        if 'max_compute' in self.params:
+            self.max_compute = self.params['max_compute']
+
+        else:
+            self.max_compute = float('inf')
         
-        self.start_time = time.time()
+        self.start_time = time.process_time()
 
         # This is the best individual based
         # on validation error.
         self.best_individual = None
-        self.start_process_time = time.process_time()
 
         if 'cycles_per_second' not in self.params:
             self.params['cycles_per_second'] = 0.
@@ -653,8 +659,7 @@ class GeneticProgramming:
                               self.best_individual.fitness[0],
                               self.best_individual.validation_fitness,
                               self.best_individual.testing_fitness,
-                              time.process_time()-self.start_process_time,
-                              # (time.process_time()-self.start_process_time)*self.params['cycles_per_second']])
+                              time.process_time()-self.start_time,
                               self.number_of_operations])
 
             if i % 1000 == 0:
@@ -681,7 +686,7 @@ class GeneticProgramming:
                     pop_data = []
 
             # Stop, if ran out of time, but still save stuff.
-            if time.time() - self.start_time > self.timeout:
+            if time.process_time() - self.start_time > self.timeout or self.max_compute < self.number_of_operations:
                 break
 
         # Save generational data

@@ -44,6 +44,9 @@ parser.add_argument('-afspo', '--AFSPO', help='Use the number of nodes in tree a
 parser.add_argument('-re', '--redos', help='Specific runs to do',
                     type=str, action='store', default='')
 
+parser.add_argument('-mc', '--max_compute', help='Maximum number of compuations to use in training',
+                    type=float, default=float('inf'))
+
 args = parser.parse_args()
 
 print(args)
@@ -181,6 +184,7 @@ last_folder = cf.get_folder(params) + '/'
 
 params['count_asymptotes'] = False
 params['save_pop_data'] = False
+params['max_compute'] = args.max_compute
 
 print('last_folder', last_folder)
 
