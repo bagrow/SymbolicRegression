@@ -651,7 +651,7 @@ class GeneticProgramming:
 
             best_data.append([i, lisp,
                               self.best_individual.fitness[0],
-                              self.best_individual,
+                              self.best_individual.validation_fitness,
                               self.best_individual.testing_fitness,
                               time.process_time()-self.start_process_time,
                               # (time.process_time()-self.start_process_time)*self.params['cycles_per_second']])
