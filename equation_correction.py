@@ -878,6 +878,19 @@ if __name__ == '__main__':
     target_names = ['quartic', 'septic', 'nonic', 'keijzer11', 'keijzer12', 'keijzer13', 'keijzer14',
                     'keijzer15', 'r1', 'r2', 'r3']
 
+    lisps = {'quartic': '(* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))',
+             'septic': '(* (x0) (+ (1) (* (x0) (+ (-2) (* (x0) (+ (1) (* (x0) (+ (-1) (* (x0) (+ (1) (* (x0) (+ (-2) (x0)))))))))))))',
+             'nonic': '(* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))))))))))))',
+             'r1': '(% (* (+ (x0) (1)) (* (+ (x0) (1)) (+ (x0) (1)))) (+ (1) (* (x0) (+ (-1) (x0)))))',
+             'r2': '(% (+ (* (* (* (x0) (x0)) (x0)) (- (* (x0) (x0)) (3))) (1)) (+ (* (x0) (x0)) (1)))',
+             'r3': '(% (* (* (* (* (x0) (x0)) (x0)) (* (x0) (x0))) (+ (1) (x0))) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))))',
+             'keijzer11': '(+ (* (x0) (x1)) (sin (* (- (x0) (1)) (- (x1) (1)))))',
+             'keijzer12': '(+ (* (* (* (x0) (x0)) (x0)) (- (x0) (1))) (* (x1) (- (* (0.5) (x1)) (1))))',
+             'keijzer13': '(* (6) (* (sin (x0)) (cos (x1))))',
+             'keijzer14': '(% (8) (+ (2) (+ (* (x0) (x0)) (* (x1) (x1)))))',
+             'keijzer15': '(+ (* (x0) (- (* (0.2) (* (x0) (x0))) (1))) (* (x1) (- (* (0.5) (* (x1) (x1))) (1))))'}
+
+
     benchamrk_datasets = get_benchmark_datasets(np.random.RandomState(args.rep+100*args.exp), max_shift, args.horizontal_shift)
 
     if args.genetic_programming:
@@ -890,15 +903,9 @@ if __name__ == '__main__':
 
         # get the name from list rather than benchmark_datasets,
         # which is a dict
-        function = target_names[args.benchmark_index]
-
         rng = np.random.RandomState(args.rep+100*args.exp)
 
         path = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(args.exp))
-
-        # dataset is the training dataset and validation dataset
-        dataset = [benchamrk_datasets[function][0][1], benchamrk_datasets[function][0][2]]
-        test_data = benchamrk_datasets[function][0][3]
 
         if args.debug_mode:
             timeout = args.timeout
@@ -907,22 +914,63 @@ if __name__ == '__main__':
         else:
             timeout, cycles_per_second = get_computation_time(args.timeout, return_cycles_per_second=True)
 
-        # get output_path, output_file
-        output_path = os.path.join(path, 'gp', function)
-        output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
-        
-        lisps = {'quartic': '(* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))',
-                 'septic': '(* (x0) (+ (1) (* (x0) (+ (-2) (* (x0) (+ (1) (* (x0) (+ (-1) (* (x0) (+ (1) (* (x0) (+ (-2) (x0)))))))))))))',
-                 'nonic': '(* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))))))))))))',
-                 'r1': '(% (* (+ (x0) (1)) (* (+ (x0) (1)) (+ (x0) (1)))) (+ (1) (* (x0) (+ (-1) (x0)))))',
-                 'r2': '(% (+ (* (* (* (x0) (x0)) (x0)) (- (* (x0) (x0)) (3))) (1)) (+ (* (x0) (x0)) (1)))',
-                 'r3': '(% (* (* (* (* (x0) (x0)) (x0)) (* (x0) (x0))) (+ (1) (x0))) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))))',
-                 'keijzer11': '(+ (* (x0) (x1)) (sin (* (- (x0) (1)) (- (x1) (1)))))',
-                 'keijzer12': '(+ (* (* (* (x0) (x0)) (x0)) (- (x0) (1))) (* (x1) (- (* (0.5) (x1)) (1))))',
-                 'keijzer13': '(* (6) (* (sin (x0)) (cos (x1))))',
-                 'keijzer14': '(% (8) (+ (2) (+ (* (x0) (x0)) (* (x1) (x1)))))',
-                 'keijzer15': '(+ (* (x0) (- (* (0.2) (* (x0) (x0))) (1))) (* (x1) (- (* (0.5) (* (x1) (x1))) (1))))'}
+        jumbled_target_name_indices = [(args.benchmark_index+i) % len(target_names)  for i, _ in enumerate(target_names) ] 
 
+        for index in jumbled_target_name_indices:
+
+            function = target_names[index]
+
+            # do this one last since it is the test function
+            if function == target_names[args.benchmark_index]:
+                continue
+
+            # dataset is the training dataset and validation dataset
+            dataset = [benchamrk_datasets[function][0][1], benchamrk_datasets[function][0][2]]
+            test_data = benchamrk_datasets[function][0][3]
+
+            # get output_path, put target function being trained and
+            # put the function that is to be the test.
+            output_path = os.path.join(path, 'gp', target_names[args.benchmark_index], function)
+            output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
+
+            num_vars = 2 if 'x1' in lisps[function] else 1
+
+            params = {'T': timeout,
+                      'cycles_per_second': cycles_per_second,
+                      'given_individual': lisps[function]}
+
+            gp = GP.GeneticProgrammingAfpo(rng=rng,
+                                           pop_size=100,
+                                           max_gens=10,
+                                           primitive_set=['*', '+', '%', '-', 'sin', 'cos'],
+                                           terminal_set=['#x', '#f'],
+                                           # this is not data, which is passed
+                                           data=dataset,
+                                           test_data=test_data,
+                                           prob_mutate=1,
+                                           prob_xover=0,
+                                           num_vars=num_vars,
+                                           mutation_param=2,
+                                           # parameters below
+                                           **params)
+
+            info = gp.run(rep=args.rep,
+                          output_path=output_path,
+                          output_file=output_file)
+
+        # Now do this for longer for the test function
+        function = target_names[args.benchmark_index]
+
+        # dataset is the training dataset and validation dataset
+        dataset = [benchamrk_datasets[function][0][1], benchamrk_datasets[function][0][2]]
+        test_data = benchamrk_datasets[function][0][3]
+
+        # get output_path, put target function being trained and
+        # put the function that is to be the test.
+        output_path = os.path.join(path, 'gp', target_names[args.benchmark_index], function)
+        output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
+
+        num_vars = 2 if 'x1' in lisps[function] else 1
 
         params = {'T': timeout,
                   'cycles_per_second': cycles_per_second,
@@ -930,15 +978,15 @@ if __name__ == '__main__':
 
         gp = GP.GeneticProgrammingAfpo(rng=rng,
                                        pop_size=100,
-                                       max_gens=30000,
-                                       primitive_set=['*', '+', '%', '-'],
+                                       max_gens=100,
+                                       primitive_set=['*', '+', '%', '-', 'sin', 'cos'],
                                        terminal_set=['#x', '#f'],
                                        # this is not data, which is passed
                                        data=dataset,
                                        test_data=test_data,
                                        prob_mutate=1,
                                        prob_xover=0,
-                                       num_vars=1,
+                                       num_vars=num_vars,
                                        mutation_param=2,
                                        # parameters below
                                        **params)
