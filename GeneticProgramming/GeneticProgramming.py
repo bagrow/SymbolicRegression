@@ -530,9 +530,11 @@ class GeneticProgramming:
             num_nonleaves = num_nodes - num_leaves
             num_ops_tree_single_eval.append(num_nonleaves)
 
-        num_ops_per_RMSE = 3*len(self.data[0]) + 1
+        num_data_points = len(self.data[0])+len(self.data[1])
 
-        total_for_each_tree = [x*len(self.data[0]) + num_ops_per_RMSE for x in num_ops_tree_single_eval]
+        num_ops_per_RMSE = 3*num_data_points + 1
+
+        total_for_each_tree = [x*num_data_points + num_ops_per_RMSE for x in num_ops_tree_single_eval]
 
         return sum(total_for_each_tree)
 
