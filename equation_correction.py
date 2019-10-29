@@ -49,7 +49,7 @@ def get_variant_dict(variant_string):
 
 class EquationAdjustor:
 
-    def __init__(self, rng, initial_hidden_values, hidden_weights, activation, horizontal, horizontal_and_vertical,
+    def __init__(self, rng, initial_hidden_values, hidden_weights, activation, shift, scale, horizontal, vertical,
                  initial_adjustment, initial_parameter, num_adjustments, fixed_adjustments,
                  variant_string, num_ops_per_tree=0, num_input=0, num_weights=0):
         """Initialize. Note that runnning this function does not create a full
@@ -65,7 +65,7 @@ class EquationAdjustor:
             The activation function.
         horizontal : bool
             If True, the nn will be used to change
-            the base function by a horizontal shift.
+            the base function by a horizontal shift/scale.
             Otherwise, a vertical shift.
         initial_adjustment : float
             The initial amount of change that is possible to do
@@ -100,21 +100,26 @@ class EquationAdjustor:
 
         self.fixed_adjustments = fixed_adjustments
 
+        self.shift = shift
+        self.scale = scale
         self.horizontal = horizontal
-        self.horizontal_and_vertical = horizontal_and_vertical
+        self.vertical = vertical
 
-        if self.horizontal_and_vertical:
-            self.adjust_function_horizontal = lambda function_string, c: eval('lambda x: '+function_string.replace('x[0]', 'np.add(x[0],'+str(c)+')'))
-            self.adjust_function_vertical = lambda function_string, c: eval('lambda x: '+function_string+'+'+str(c))
-            self.num_output = 5
+        if self.shift:
 
-        elif self.horizontal:
-            self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string.replace('x[0]', 'np.add(x[0],'+str(c)+')'))
-            self.num_output = 2 if self.variant['MO'] else 1
+            if self.vertical and self. horizontal:
+                self.num_output = 5
 
-        else:   # vertical shift
-            self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string+'+'+str(c))
+            elif self.horizontal:
+                self.num_output = 2 if self.variant['MO'] else 1
+
+            else:   # vertical shift
+                self.num_output = 1
+
+        elif self.scale:
             self.num_output = 1
+
+        self.adjust_function = lambda function_string, hshift=0, vshift=0, hscale=1, vscale=1: eval('lambda x: '+str(vscale)+'*'+function_string.replace('x[0]', 'np.add(x[0],'+str(hshift)+')').replace('x[0]', 'np.multiply(x[0],'+str(hscale)+')')+'+'+str(vshift))
 
         self.set_num_adjustments(num_adjustments)
 
@@ -158,8 +163,10 @@ class EquationAdjustor:
         self.adjustment = self.initial_adjustment
         self.parameter = self.initial_parameter
 
-        if self.horizontal_and_vertical:
-            self.horizontal_parameter = self.initial_parameter
+        self.hshift_parameter = 0
+        self.vshift_parameter = 0
+        self.hscale_parameter = 1
+        self.vscale_parameter = 1
 
         # In case index is passed into nn
         self.index = 0
@@ -170,11 +177,11 @@ class EquationAdjustor:
 
         # this is a bit pointless with self.parameter=0, but it does
         # get initial error
-        if self.horizontal_and_vertical:
-            f = self.adjust_function_vertical(function_string, self.parameter)
-
-        else:
-            f = self.adjust_function(function_string, self.parameter)
+        f = self.adjust_function(function_string, 
+                                 hshift=self.hshift_parameter,
+                                 vshift=self.vshift_parameter,
+                                 hscale=self.hscale_parameter,
+                                 vscale=self.vscale_parameter)
  
         predicted_output = f(x.T)
         self.errors = [np.sqrt(np.mean(np.power(predicted_output-y, 2)))]
@@ -252,11 +259,42 @@ class EquationAdjustor:
         else:
             num_hidden = len(self.hidden_values)
 
-        if self.horizontal_and_vertical:
+        if self.shift:
 
-            input = [signed_error, prev_error, error, *output]
+            if self.vertical and self.horizontal:
 
-        elif self.horizontal:
+                input = [signed_error, prev_error, error, *output]
+
+            elif self.horizontal:
+
+                input = [error]
+
+                # timestep (count down)
+                if self.variant['TS']:
+                    input.append(1-timestep/self.num_adjustments)
+
+                # prev error
+                if self.variant['PE']:
+                    input.append(prev_error)
+
+                # error difference
+                if self.variant['ED']:
+                    input.append(error - prev_error)
+
+                # if recursive output
+                if self.variant['RO']:
+
+                    # if multiple output
+                    if self.variant['MO']:
+                        input.extend(np.eye(2)[int(prev_index)])
+
+                    else:
+                        input.extend(output)
+
+            elif self.vertical:
+                input = [signed_error]
+
+        elif self.scale:
 
             input = [error]
 
@@ -268,22 +306,9 @@ class EquationAdjustor:
             if self.variant['PE']:
                 input.append(prev_error)
 
-            # error difference
-            if self.variant['ED']:
-                input.append(error - prev_error)
-
             # if recursive output
             if self.variant['RO']:
-
-                # if multiple output
-                if self.variant['MO']:
-                    input.extend(np.eye(2)[int(prev_index)])
-
-                else:
-                    input.extend(output)
-
-        else:
-            input = [signed_error]
+                input.extend(output)
 
         # Take one node for the signed error.
         input_weights = w[:num_hidden*len(input)].reshape((len(input), num_hidden))
@@ -311,10 +336,15 @@ class EquationAdjustor:
 
         new_output = self.get_value(input_weights, hidden_weights, output_weights, input, hidden_to_hidden_weights)
 
-        if self.horizontal_and_vertical:
-            index = np.argmax(new_output[:2])
-        
-        else:
+        if self.shift:
+
+            if self.vertical and self.horizontal:
+                index = np.argmax(new_output[:2])
+            
+            else:
+                index = np.argmax(new_output)
+
+        elif self.scale:
             index = np.argmax(new_output)
 
         return index, new_output
@@ -348,68 +378,78 @@ class EquationAdjustor:
 
         # self.total_compute += 3 # for division to go from error to fitness
 
-        if self.horizontal_and_vertical:
+        if self.shift:
 
-            # get horizontal or vertical mode
-            if self.index == 0:
-                # horizontal
-                self.output[0] = 1
-                self.output[1] = 0
-                self.adjust_function = self.adjust_function_horizontal
+            if self.vertical and self.horizontal:
 
-                horizontal_index = 3 + np.argmax(self.output[3:])
-                
-                if horizontal_index == 3:
-                    self.output[3] = 1
-                    self.output[4] = 0
-                    self.parameter = self.horizontal_parameter + self.adjustment
-
-                elif horizontal_index == 4:
-                    self.output[3] = 0
-                    self.output[4] = 1
-                    self.parameter = self.horizontal_parameter - self.adjustment
-
-                else:
-                    print('Unspecified option. horizontal_index =', horizontal_index, 'in horizontal_and_vertical=True')
-                    exit()
-
-            elif self.index == 1:
-                # vertical
-                self.output[0] = 0
-                self.output[1] = 1
-                self.adjust_function = self.adjust_function_vertical
-                self.parameter += self.output[2]
-
-            else:
-                print('I did something wrong with index in horizontal_and_vertical=True.')
-
-
-
-        elif self.horizontal:
-
-            if self.variant['MO']:
-
+                # get horizontal or vertical mode
                 if self.index == 0:
-                    self.parameter += self.adjustment
+                    # horizontal
+                    self.output[0] = 1
+                    self.output[1] = 0
+
+                    horizontal_index = 3 + np.argmax(self.output[3:])
+                    
+                    if horizontal_index == 3:
+                        self.output[3] = 1
+                        self.output[4] = 0
+                        self.hshift_parameter = self.hshift_parameter + self.adjustment
+
+                    elif horizontal_index == 4:
+                        self.output[3] = 0
+                        self.output[4] = 1
+                        self.hshift_parameter = self.hshift_parameter - self.adjustment
+
+                    else:
+                        print('Unspecified option. horizontal_index =', horizontal_index, 'in vertical and horizontal True')
+                        exit()
 
                 elif self.index == 1:
-                    self.parameter -= self.adjustment
-
-                elif self.index == 2:
-                    pass # keep self.parameter the same
+                    # vertical
+                    self.output[0] = 0
+                    self.output[1] = 1
+                    self.vshift_parameter += self.output[2]
 
                 else:
-                    print('Unspecified option. index =', self.index)
-                    exit()
-            else:
+                    print('I did something wrong with index in vertical and horizontal True.')
 
-                self.parameter += self.output[0]
+            elif self.horizontal:
 
-        else:
+                if self.variant['MO']:
 
-            self.parameter += self.output[0]
+                    if self.index == 0:
+                        self.hshift_parameter += self.adjustment
 
-        f = self.adjust_function(function_string, self.parameter)
+                    elif self.index == 1:
+                        self.hshift_parameter -= self.adjustment
+
+                    elif self.index == 2:
+                        pass # keep self.parameter the same
+
+                    else:
+                        print('Unspecified option. index =', self.index)
+                        exit()
+                else:
+
+                    self.hshift_parameter += self.output[0]
+
+            elif self.vertical:
+
+                self.vshift_parameter += self.output[0]
+
+        elif self.scale:
+
+            if self.horizontal:
+                self.hscale_parameter += self.output[0]
+
+            if self.vertical:
+                self.vscale_parameter += self.output[0]
+
+        f = self.adjust_function(function_string, 
+                                 hshift=self.hshift_parameter,
+                                 vshift=self.vshift_parameter,
+                                 hscale=self.hscale_parameter,
+                                 vscale=self.vscale_parameter)
 
         x = dataset[:, 1:]
         y = dataset[:, 0]
@@ -421,7 +461,7 @@ class EquationAdjustor:
         self.total_compute += 2*len(dataset) + 3*len(dataset) + 1 + ops_in_function*len(dataset)
 
 
-    def run_equation_corrector(self, function_string, dataset, w, return_compute=False):
+    def run_equation_corrector(self, function_string, dataset, w, return_compute=False, return_fitnesses=False):
 
         compute = [self.total_compute]
 
@@ -439,13 +479,16 @@ class EquationAdjustor:
             
             self.cpu_time.append(time.process_time()-self.cpu_start_time)
 
-        fitness = self.errors[-1]/self.errors[0]
-
-        if return_compute:
-            return fitness, compute
+        if return_fitnesses:
+            to_return = (self.errors/self.errors[0],)
 
         else:
-            return fitness
+            to_return = (self.errors[-1]/self.errors[0],)
+
+        if return_compute:
+            to_return = (*to_return, compute)
+
+        return to_return
 
 
     def cma_es_function(self, w, rng, datasets, return_train_val=True, return_avg=False, return_test=False):
@@ -465,9 +508,9 @@ class EquationAdjustor:
                 # training dataset
                 self.reinitialize(function_string, training_dataset)
 
-                training_fitness = self.run_equation_corrector(function_string, training_dataset, w)
+                training_fitness = self.run_equation_corrector(function_string, training_dataset, w, return_fitnesses=False)
 
-                training_fitnesses.append(training_fitness)
+                training_fitnesses.append(training_fitness[0])
                 training_errors.append(self.errors[-1])
 
             # use validation functions to get validation dataset
@@ -476,9 +519,9 @@ class EquationAdjustor:
                 # validation dataset
                 self.reinitialize(function_string, validation_dataset)
 
-                validation_fitness = self.run_equation_corrector(function_string, validation_dataset, w)
+                validation_fitness = self.run_equation_corrector(function_string, validation_dataset, w, return_fitnesses=False)
 
-                validation_fitnesses.append(validation_fitness)
+                validation_fitnesses.append(validation_fitness[0])
                 validation_errors.append(self.errors[-1])
 
         if return_test:
@@ -511,6 +554,7 @@ class EquationAdjustor:
 
             global best
 
+            # mean_validation_fitness = np.mean(np.sum(validation_fitnesses, axis=1))
             mean_validation_fitness = np.mean(validation_fitnesses)
 
             if 'best' in globals():
@@ -518,11 +562,11 @@ class EquationAdjustor:
                 if mean_validation_fitness < best[0]:
 
                     best = (mean_validation_fitness, w)
+                    print('new best', best[0])#, np.mean([v[-1] for v in validation_fitnesses]))
 
             else:
 
                 best = (mean_validation_fitness, w)
-
 
         errors = {}
         fitnesses = {}
@@ -533,6 +577,7 @@ class EquationAdjustor:
             fitnesses['training'] = training_fitnesses
 
             if return_avg:
+                # return np.mean(np.sum(training_fitnesses, axis=1))
                 return np.mean(training_fitnesses)
 
             errors['validation'] = validation_errors
@@ -585,8 +630,8 @@ class EquationAdjustor:
 # -------------------------------------------------------------------------- #
 
 
-def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, horizontal_and_vertical, debug_mode, benchamrk_datasets, dataset_name,
-                             num_adjustments, max_shift, variant_string):
+def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale, horizontal, vertical, debug_mode, benchamrk_datasets, dataset_name,
+                             num_adjustments, max_adjustment, variant_string):
 
     # define parameters
     num_targets = 50
@@ -609,8 +654,6 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, h
     # get consistent validation set to get best overall EA from experiment
     rng = np.random.RandomState(100*exp)
 
-    # datasets_validation_functions_consistent = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, horizontal_and_vertical, fixed_adjustments)
-
     rng = np.random.RandomState(rep+100*exp)
 
     hidden_values = rng.uniform(-1, 1, size=10)
@@ -618,41 +661,58 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, h
 
     variant = get_variant_dict(variant_string)
 
-    if horizontal_and_vertical:
+    if shift:
 
-        num_input = 8
-        num_output = 5
+        if vertical and horizontal:
 
-    elif horizontal:
+            num_input = 8
+            num_output = 5
 
-        if variant['MO']:
-            num_output = 2
+        elif horizontal:
 
-        else:
+            if variant['MO']:
+                num_output = 2
+
+            else:
+                num_output = 1
+
+            num_input = 1
+
+            if variant['RO']:
+
+                if variant['MO']:
+                    num_input += 2
+
+                else:
+                    num_input += 1
+
+            if variant['PE']:
+                num_input += 1
+
+            if variant['ED']:
+                num_input += 1
+
+            if variant['TS']:
+                num_input += 1
+
+        elif vertical:
+
+            num_input = 1
             num_output = 1
+
+    elif scale:
 
         num_input = 1
 
         if variant['RO']:
-
-            if variant['MO']:
-                num_input += 2
-
-            else:
-                num_input += 1
-
-        if variant['PE']:
             num_input += 1
 
-        if variant['ED']:
+        if variant['PE']:
             num_input += 1
 
         if variant['TS']:
             num_input += 1
 
-    else:
-
-        num_input = 1
         num_output = 1
 
     additional_hidden_weights = (variant['HL']-1)*len(hidden_values)**2 
@@ -667,8 +727,27 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, h
     weights = rng.uniform(-1, 1, size=num_weights)
 
     # get data
-    num_ops_train, datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, horizontal_and_vertical, fixed_adjustments)
-    num_ops_val, datasets_validation_functions = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, horizontal_and_vertical, fixed_adjustments)
+    num_ops_train, datasets = get_data_for_equation_corrector(rng=rng,
+                                                              num_targets=num_targets,
+                                                              num_base_function_per_target=num_base_function_per_target,
+                                                              depth=depth,
+                                                              max_adjustment=max_adjustment,
+                                                              shift=shift,
+                                                              scale=scale,
+                                                              horizontal=horizontal,
+                                                              vertical=vertical,
+                                                              fixed_adjustments=fixed_adjustments)
+
+    num_ops_val, datasets_validation_functions = get_data_for_equation_corrector(rng=rng,
+                                                                                 num_targets=num_targets,
+                                                                                 num_base_function_per_target=num_base_function_per_target,
+                                                                                 depth=depth,
+                                                                                 max_adjustment=max_adjustment,
+                                                                                 shift=shift,
+                                                                                 scale=scale,
+                                                                                 horizontal=horizontal,
+                                                                                 vertical=vertical,
+                                                                                 fixed_adjustments=fixed_adjustments)
 
     all_datasets = {'training': datasets,
                     'validation': datasets_validation_functions,
@@ -691,7 +770,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, h
                     ('max number of function evaluations', function_evals),
                     ('debug mode', debug_mode),
                     ('horizontal', horizontal),
-                    ('max shift', max_shift),
+                    ('max shift', max_adjustment),
                     ('timeout', timeout),
                     ('fixed adjustment', fixed_adjustments),
                     ('activation', activation.__name__),
@@ -743,8 +822,10 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, h
                           initial_hidden_values=hidden_values,
                           hidden_weights=hidden_weights,
                           activation=np.tanh,
+                          shift=shift,
+                          scale=scale,
                           horizontal=horizontal,
-                          horizontal_and_vertical=horizontal_and_vertical,
+                          vertical=vertical,
                           initial_adjustment=initial_adjustment,
                           initial_parameter=initial_parameter, # should go in __init__. scaling will be 1
                           num_adjustments=num_adjustments,
@@ -881,7 +962,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, h
     #                                                                           'initial hidden values'])
 
 
-def get_benchmark_datasets(rng, max_shift, horizontal, horizontal_and_vertical):
+def get_benchmark_datasets(rng, max_adjustment, shift, scale, horizontal, vertical):
 
     # target_names = ['quartic', 'septic', 'nonic', 'keijzer11', 'keijzer12', 'keijzer13', 'keijzer14',
     #                 'keijzer15', 'r1', 'r2', 'r3']
@@ -901,8 +982,6 @@ def get_benchmark_datasets(rng, max_shift, horizontal, horizontal_and_vertical):
     benchamrk_datasets = {}
 
     for f_name, f_func in target_strings.items():
-    
-        shift = rng.uniform(0, max_shift)
 
         x0_train = rng.uniform(-1, 1, 20)
         x1_train = rng.uniform(-1, 1, 20)
@@ -919,22 +998,8 @@ def get_benchmark_datasets(rng, max_shift, horizontal, horizontal_and_vertical):
 
         input_test = np.vstack((x0_test, x1_test))
 
-        if horizontal_and_vertical:
-
-            shift_horizontal = rng.uniform(0, max_shift)
-            shift_vertical = rng.uniform(0, max_shift)
-
-            lambda_string = 'lambda x: '+f_func.replace('x[0]', 'np.add(x[0],'+str(shift_horizontal)+')') + '+' +str(shift_vertical)
-
-        elif horizontal:
-
-            lambda_string = 'lambda x: '+f_func.replace('x[0]', 'np.add(x[0],'+str(shift)+')')
-
-        else:
-
-            lambda_string = 'lambda x: '+f_func + '+' +str(shift)
-
-        f = eval(lambda_string)
+        f = get_function(rng=rng, f_str=f_func, max_adjustment=max_adjustment,
+                         shift=shift, scale=scale, horizontal=horizontal, vertical=vertical)
 
         output_train = f(input_train)
         output_val = f(input_val)
@@ -950,8 +1015,46 @@ def get_benchmark_datasets(rng, max_shift, horizontal, horizontal_and_vertical):
     return benchamrk_datasets
 
 
+def get_function(rng, f_str, max_adjustment, shift, scale, horizontal, vertical):
+
+    if shift:
+
+        if vertical:
+
+            shift_amount = rng.uniform(0, max_adjustment['vshift'])
+
+            updated_f_str = f_str + '+' +str(shift_amount)
+
+        if horizontal:
+
+            shift_amount = rng.uniform(0, max_adjustment['hshift'])
+
+            updated_f_str = f_str.replace('x[0]', 'np.add(x[0],'+str(shift_amount)+')')
+
+    if scale:
+
+        if vertical:
+
+            scale_amount = rng.uniform(0, max_adjustment['vscale'])
+
+            updated_f_str = 'np.multiply('+f_str+','+str(scale_amount)+')'
+
+        if horizontal:
+
+            scale_amount = rng.uniform(0, max_adjustment['hscale'])
+
+            updated_f_str = f_str.replace('x[0]', 'np.multiply(x[0],'+str(scale_amount)+')')
+
+    lambda_string = 'lambda x: '+updated_f_str
+
+    f = eval(lambda_string)
+
+    return f
+
+
 def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target,
-                                    depth, max_shift=50, horizontal=False, horizontal_and_vertical=False,
+                                    depth, max_adjustment=50, shift=False, scale=False,
+                                    horizontal=False, vertical=False,
                                     fixed_adjustments=False):
     """Generate a dataset for multiple functions. Keep track of
     the base function(s) connected with the dataset.
@@ -1007,14 +1110,11 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
         num_leaves, num_nodes = t.get_num_leaves(return_num_nodes=True)
         number_of_operations += num_nodes-num_leaves
         
-        if horizontal_and_vertical:
-            number_of_operations += t.get_lisp_string().count('x0') + 1
-
-        elif horizontal:
-            number_of_operations += t.get_lisp_string().count('x0')
-
-        else:
+        if vertical:
             number_of_operations += 1
+
+        if horizontal:
+            number_of_operations += t.get_lisp_string(actual_lisp=True).count('x0')
 
     datasets = []
 
@@ -1026,34 +1126,12 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
 
     for i, t in enumerate(targets):
 
-        offset = [0]
+        base_function_string = t.convert_lisp_to_standard_for_function_creation()
 
-        if horizontal_and_vertical:
+        function = [get_function(rng=rng, f_str=base_function_string, max_adjustment=max_adjustment,
+                                 shift=shift, scale=scale, horizontal=horizontal, vertical=vertical) for _ in range(num_base_function_per_target)]
 
-            while 0. in offset:
-                offset = rand_offset(-max_shift, max_shift, size=(num_base_function_per_target, 2))
-        
-        else:
-
-            while 0. in offset:
-                offset = rand_offset(-max_shift, max_shift, size=num_base_function_per_target)
-
-        # base_file = os.path.join(os.environ['GP_DATA'], 'tree')
-
-        for o in offset:
-
-            base_function_string = t.convert_lisp_to_standard_for_function_creation()
-
-            if horizontal_and_vertical:
-                function_string = base_function_string.replace('x[0]', 'np.add(x[0],'+str(o[0])+')')+'+'+str(o[1])
-
-            elif horizontal:
-                function_string = base_function_string.replace('x[0]', 'np.add(x[0],'+str(o)+')')
-
-            else:
-                function_string = base_function_string+'+'+str(o)
-
-            function = eval('lambda x: '+function_string)
+        for f in function:
 
             # Make inputs
             x = np.array([rng.uniform(-1, 1, size=300) for _ in range(num_vars)]).T
@@ -1067,9 +1145,9 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
             x_validation = x[validation_indices]
             x_testing = x[testing_indices]
 
-            training_dataset = np.hstack((np.array([function(x_training.T)]).T, x_training))
-            validation_dataset = np.hstack((np.array([function(x_validation.T)]).T, x_validation))
-            testing_dataset = np.hstack((np.array([function(x_testing.T)]).T, x_testing))
+            training_dataset = np.hstack((np.array([f(x_training.T)]).T, x_training))
+            validation_dataset = np.hstack((np.array([f(x_validation.T)]).T, x_validation))
+            testing_dataset = np.hstack((np.array([f(x_testing.T)]).T, x_testing))
 
             datasets.append((base_function_string, training_dataset, validation_dataset, testing_dataset))
 
@@ -1083,8 +1161,7 @@ if __name__ == '__main__':
     # this will act as an index for rep_list (offset by 1 though)
     parser.add_argument('rep', help='Number of runs already performed', type=int)
     parser.add_argument('exp', help='Experiment number. Used in save location', type=int)
-    parser.add_argument('-hs', '--horizontal_shift', help='If True, NN will be trained to do horizontal shifts',
-                        action='store_true')
+
     parser.add_argument('-t', '--timeout', help='The number of seconds use for training based on clock speed.',
                         type=float, action='store', default=float('inf'))
 
@@ -1098,22 +1175,31 @@ if __name__ == '__main__':
                         type=str)
     parser.add_argument('-b', '--benchmark_index', help='Sets the benchmark to try to solve.',
                         type=int)
-    parser.add_argument('-hv', '--horizontal_and_vertical', help='Do horizontal and vertical shifts',
+    
+    parser.add_argument('--horizontal', help='If True, NN will be trained to do horizontal stuff',
+                        action='store_true')
+    parser.add_argument('--vertical', help='If True, NN will be trained to do vertical stuff',
+                        action='store_true')
+
+    parser.add_argument('--shift', help='Stuff=shifts',
+                        action='store_true')
+    parser.add_argument('--scale', help='Stuff=scale',
                         action='store_true')
 
     args = parser.parse_args()
     print(args)
+
+    assert (args.shift or args.scale) and (args.horizontal or args.vertical), '--vertical or --horizontal must be used with --shift or --scale'
 
     max_compute_training = 10**10
     max_compute_testing = 10**10
 
     num_adjustments = 50
 
-    if not args.horizontal_shift:
-        max_shift = sum([1-k/num_adjustments for k in range(num_adjustments)])
-
-    else:
-        max_shift = 5
+    max_adjustment = {'hshift': sum([1-k/num_adjustments for k in range(num_adjustments)]),
+                      'vshift': 5,
+                      'hscale': 5,
+                      'vscale': 5}
 
     target_names = ['quartic', 'septic', 'nonic', 'keijzer11', 'keijzer12', 'keijzer13', 'keijzer14',
                     'keijzer15', 'r1', 'r2', 'r3']
@@ -1131,7 +1217,13 @@ if __name__ == '__main__':
              'keijzer15': '(+ (* (x0) (- (* (0.2) (* (x0) (x0))) (1))) (* (x1) (- (* (0.5) (* (x1) (x1))) (1))))'}
 
 
-    benchamrk_datasets = get_benchmark_datasets(np.random.RandomState(args.rep+100*args.exp), max_shift, args.horizontal_shift, args.horizontal_and_vertical)
+    benchamrk_datasets = get_benchmark_datasets(rng=np.random.RandomState(args.rep+100*args.exp),
+                                                max_adjustment=max_adjustment,
+                                                shift=args.shift,
+                                                scale=args.scale,
+                                                horizontal=args.horizontal,
+                                                vertical=args.vertical)
+
     jumbled_target_name_indices = [(args.benchmark_index+i+1) % len(target_names)  for i, _ in enumerate(target_names)] 
     jumbled_target_name = [target_names[i] for i in jumbled_target_name_indices]
     target_name = target_names[args.benchmark_index]
@@ -1246,9 +1338,10 @@ if __name__ == '__main__':
         assert args.timeout is not None, 'Specify a time limit with -t or --timeout'
 
         train_equation_corrector(rep=args.rep, exp=args.exp, timeout=args.timeout,
-                                 fixed_adjustments=False, horizontal=args.horizontal_shift,
-                                 horizontal_and_vertical=args.horizontal_and_vertical,
+                                 fixed_adjustments=False, shift=args.shift,
+                                 scale=args.scale, horizontal=args.horizontal,
+                                 vertical=args.vertical,
                                  debug_mode=args.debug_mode, benchamrk_datasets=benchamrk_datasets,
                                  dataset_name=target_name,
-                                 max_shift=max_shift, num_adjustments=num_adjustments,
+                                 max_adjustment=max_adjustment, num_adjustments=num_adjustments,
                                  variant_string=args.variant_string)
