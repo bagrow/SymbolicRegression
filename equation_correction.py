@@ -49,9 +49,9 @@ def get_variant_dict(variant_string):
 
 class EquationAdjustor:
 
-    def __init__(self, rng, initial_hidden_values, hidden_weights, activation, horizontal,
+    def __init__(self, rng, initial_hidden_values, hidden_weights, activation, horizontal, horizontal_and_vertical,
                  initial_adjustment, initial_parameter, num_adjustments, fixed_adjustments,
-                 variant_string):
+                 variant_string, num_ops_per_tree=0, num_input=0, num_weights=0):
         """Initialize. Note that runnning this function does not create a full
         EquationAdjuster because it does not have input and output weights.
 
@@ -101,8 +101,14 @@ class EquationAdjustor:
         self.fixed_adjustments = fixed_adjustments
 
         self.horizontal = horizontal
+        self.horizontal_and_vertical = horizontal_and_vertical
 
-        if self.horizontal:
+        if self.horizontal_and_vertical:
+            self.adjust_function_horizontal = lambda function_string, c: eval('lambda x: '+function_string.replace('x[0]', 'np.add(x[0],'+str(c)+')'))
+            self.adjust_function_vertical = lambda function_string, c: eval('lambda x: '+function_string+'+'+str(c))
+            self.num_output = 5
+
+        elif self.horizontal:
             self.adjust_function = lambda function_string, c: eval('lambda x: '+function_string.replace('x[0]', 'np.add(x[0],'+str(c)+')'))
             self.num_output = 2 if self.variant['MO'] else 1
 
@@ -111,6 +117,24 @@ class EquationAdjustor:
             self.num_output = 1
 
         self.set_num_adjustments(num_adjustments)
+
+        self.total_compute = 0
+        # self.num_ops_per_adjustment_per_individual = num_ops_per_adjustment_per_individual
+        self.num_ops_per_tree = num_ops_per_tree
+
+        # multiply by dataset size (train + validation) + RMS
+        # self.num_ops_per_adjustment_per_individual = self.num_ops_per_tree*40 + 3*40 + 1
+
+        # num_ops_per_adjustment = num_ops_per_adjustment_per_individual*popsize
+
+        # num_ops_per_gen_only_trees = num_ops_per_adjustment*num_adjustments
+
+        indegree = [num_input]*len(self.initial_hidden_values)+ [len(self.initial_hidden_values)]*self.num_output
+
+        # Additions at each node + multiplication on edges + activation function on non-input nodes
+        self.nn_ops_per_eval = sum([d-1 for d in indegree]) + num_weights + len(self.initial_hidden_values) + self.num_output
+
+        # nn_ops_per_gen = num_adjustments*nn_ops_per_eval
 
 
     def set_num_adjustments(self, num_adjustments):
@@ -134,6 +158,9 @@ class EquationAdjustor:
         self.adjustment = self.initial_adjustment
         self.parameter = self.initial_parameter
 
+        if self.horizontal_and_vertical:
+            self.horizontal_parameter = self.initial_parameter
+
         # In case index is passed into nn
         self.index = 0
 
@@ -141,10 +168,21 @@ class EquationAdjustor:
         x = dataset[:, 1:]
         y = dataset[:, 0]
 
-        f = self.adjust_function(function_string, self.parameter)
+        # this is a bit pointless with self.parameter=0, but it does
+        # get initial error
+        if self.horizontal_and_vertical:
+            f = self.adjust_function_vertical(function_string, self.parameter)
 
-        self.errors = [np.sqrt(np.mean(np.power(f(x.T)-y, 2)))]
-        self.signed_error = np.mean(y-f(x.T))
+        else:
+            f = self.adjust_function(function_string, self.parameter)
+ 
+        predicted_output = f(x.T)
+        self.errors = [np.sqrt(np.mean(np.power(predicted_output-y, 2)))]
+        self.signed_error = np.mean(y-predicted_output)
+
+        # operations for signed error + error + tree evaluation
+        ops_in_function = function_string.count('(')
+        self.total_compute += 2*len(dataset) + 3*len(dataset) + 1 + ops_in_function*len(dataset)
 
         self.cpu_start_time = time.process_time()
         self.cpu_time = []
@@ -185,6 +223,8 @@ class EquationAdjustor:
             self.hidden_values = self.activation(np.matmul(input, input_weights))# + np.matmul(self.hidden_values, hidden_weights))
             output = self.activation(np.matmul(self.hidden_values, output_weights))
 
+        self.total_compute += self.nn_ops_per_eval
+
         return output
 
 
@@ -212,7 +252,11 @@ class EquationAdjustor:
         else:
             num_hidden = len(self.hidden_values)
 
-        if self.horizontal:
+        if self.horizontal_and_vertical:
+
+            input = [signed_error, prev_error, error, *output]
+
+        elif self.horizontal:
 
             input = [error]
 
@@ -236,7 +280,7 @@ class EquationAdjustor:
                     input.extend(np.eye(2)[int(prev_index)])
 
                 else:
-                    input.append(output)
+                    input.extend(output)
 
         else:
             input = [signed_error]
@@ -267,7 +311,11 @@ class EquationAdjustor:
 
         new_output = self.get_value(input_weights, hidden_weights, output_weights, input, hidden_to_hidden_weights)
 
-        index = np.argmax(new_output)
+        if self.horizontal_and_vertical:
+            index = np.argmax(new_output[:2])
+        
+        else:
+            index = np.argmax(new_output)
 
         return index, new_output
 
@@ -290,7 +338,7 @@ class EquationAdjustor:
         """
 
         prev_error = self.errors[-2] if len(self.errors) > 1 else self.errors[0]
-        output = self.output[0] if hasattr(self, 'output') else 0.
+        output = self.output if hasattr(self, 'output') else [0.]*self.num_output
 
         self.index, self.output = self.evaluate_corrector_neural_network(w, timestep, error=self.errors[-1]/self.errors[0],
                                                                          signed_error=self.signed_error/self.errors[0],
@@ -298,20 +346,64 @@ class EquationAdjustor:
                                                                          prev_index=self.index,
                                                                          output=output)
 
-        if self.variant['MO']:
+        # self.total_compute += 3 # for division to go from error to fitness
 
+        if self.horizontal_and_vertical:
+
+            # get horizontal or vertical mode
             if self.index == 0:
-                self.parameter += self.adjustment
+                # horizontal
+                self.output[0] = 1
+                self.output[1] = 0
+                self.adjust_function = self.adjust_function_horizontal
+
+                horizontal_index = 3 + np.argmax(self.output[3:])
+                
+                if horizontal_index == 3:
+                    self.output[3] = 1
+                    self.output[4] = 0
+                    self.parameter = self.horizontal_parameter + self.adjustment
+
+                elif horizontal_index == 4:
+                    self.output[3] = 0
+                    self.output[4] = 1
+                    self.parameter = self.horizontal_parameter - self.adjustment
+
+                else:
+                    print('Unspecified option. horizontal_index =', horizontal_index, 'in horizontal_and_vertical=True')
+                    exit()
 
             elif self.index == 1:
-                self.parameter -= self.adjustment
-
-            elif self.index == 2:
-                pass # keep self.parameter the same
+                # vertical
+                self.output[0] = 0
+                self.output[1] = 1
+                self.adjust_function = self.adjust_function_vertical
+                self.parameter += self.output[2]
 
             else:
-                print('Unspecified option. index =', index)
-                exit()
+                print('I did something wrong with index in horizontal_and_vertical=True.')
+
+
+
+        elif self.horizontal:
+
+            if self.variant['MO']:
+
+                if self.index == 0:
+                    self.parameter += self.adjustment
+
+                elif self.index == 1:
+                    self.parameter -= self.adjustment
+
+                elif self.index == 2:
+                    pass # keep self.parameter the same
+
+                else:
+                    print('Unspecified option. index =', self.index)
+                    exit()
+            else:
+
+                self.parameter += self.output[0]
 
         else:
 
@@ -325,8 +417,13 @@ class EquationAdjustor:
         self.errors.append(np.sqrt(np.mean(np.power(y-f(x.T), 2))))
         self.signed_error = np.mean(y-f(x.T))
 
+        ops_in_function = function_string.count('(')
+        self.total_compute += 2*len(dataset) + 3*len(dataset) + 1 + ops_in_function*len(dataset)
 
-    def run_equation_corrector(self, function_string, dataset, w):
+
+    def run_equation_corrector(self, function_string, dataset, w, return_compute=False):
+
+        compute = [self.total_compute]
 
         for timestep in range(self.num_adjustments):
 
@@ -337,12 +434,18 @@ class EquationAdjustor:
             self.update_equation(timestep, function_string, dataset, w)
 
             self.adjustment -= self.step
-            # self.adjustment = abs(self.signed_error)
+            
+            compute.append(self.total_compute)
+            
             self.cpu_time.append(time.process_time()-self.cpu_start_time)
 
         fitness = self.errors[-1]/self.errors[0]
 
-        return fitness
+        if return_compute:
+            return fitness, compute
+
+        else:
+            return fitness
 
 
     def cma_es_function(self, w, rng, datasets, return_train_val=True, return_avg=False, return_test=False):
@@ -387,13 +490,14 @@ class EquationAdjustor:
 
             # testing_fitnesses = []
             # testing_errors = []
+            temp_total_compute = self.total_compute
 
             for function_string, training_dataset, validation_dataset, testing_dataset in datasets['testing']:
 
                 # testing dataset
                 self.reinitialize(function_string, testing_dataset)
 
-                testing_fitness = self.run_equation_corrector(function_string, testing_dataset, w)
+                testing_fitness, compute = self.run_equation_corrector(function_string, testing_dataset, w, return_compute=True)
 
                 # testing_fitnesses.append(testing_fitness)
                 # testing_errors.append(self.errors[-1])
@@ -401,19 +505,23 @@ class EquationAdjustor:
             testing_errors = self.errors
             testing_fitnesses = self.errors/self.errors[0]
 
+            self.total_compute = temp_total_compute
+
         if return_train_val:
 
             global best
 
+            mean_validation_fitness = np.mean(validation_fitnesses)
+
             if 'best' in globals():
 
-                if validation_fitness < best[0]:
+                if mean_validation_fitness < best[0]:
 
-                    best = (np.mean(validation_fitnesses), w)
+                    best = (mean_validation_fitness, w)
 
             else:
 
-                best = validation_fitness
+                best = (mean_validation_fitness, w)
 
 
         errors = {}
@@ -434,6 +542,8 @@ class EquationAdjustor:
 
             errors['testing'] = testing_errors
             fitnesses['testing'] =  testing_fitnesses
+
+            return errors, fitnesses, compute
 
         return errors, fitnesses
 
@@ -475,11 +585,11 @@ class EquationAdjustor:
 # -------------------------------------------------------------------------- #
 
 
-def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, debug_mode, benchamrk_datasets, dataset_order,
-                             num_adjustments, max_shift, variant_string, ):
+def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, horizontal_and_vertical, debug_mode, benchamrk_datasets, dataset_name,
+                             num_adjustments, max_shift, variant_string):
 
     # define parameters
-    num_targets = 5
+    num_targets = 50
     num_test_targets = 1
     num_base_function_per_target = 1
     depth = 6
@@ -492,18 +602,14 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
     initial_adjustment = 1.
     initial_parameter = 0.
 
-    if not debug_mode:
-        timeout, cycles_per_second = get_computation_time(timeout, return_cycles_per_second=True)
-
-    else:
-        cycles_per_second = 1.6 * 10**9
+    cycles_per_second = 1.6 * 10**9
 
     return_all_errors = False
 
     # get consistent validation set to get best overall EA from experiment
     rng = np.random.RandomState(100*exp)
 
-    datasets_validation_functions_consistent = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, fixed_adjustments)
+    # datasets_validation_functions_consistent = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, horizontal_and_vertical, fixed_adjustments)
 
     rng = np.random.RandomState(rep+100*exp)
 
@@ -512,7 +618,12 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
     variant = get_variant_dict(variant_string)
 
-    if horizontal:
+    if horizontal_and_vertical:
+
+        num_input = 8
+        num_output = 5
+
+    elif horizontal:
 
         if variant['MO']:
             num_output = 2
@@ -546,18 +657,22 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
     additional_hidden_weights = (variant['HL']-1)*len(hidden_values)**2 
 
+    num_weights = num_input*len(hidden_values)+len(hidden_values)*num_output+additional_hidden_weights
+
     global best
 
     # best = (error, weights)
     best = (float('inf'), None)
 
-    weights = rng.uniform(-1, 1, size=num_input*len(hidden_values)+len(hidden_values)*num_output+additional_hidden_weights)
+    weights = rng.uniform(-1, 1, size=num_weights)
 
     # get data
-    num_ops_train, datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, fixed_adjustments)
-    num_ops_val, datasets_validation_functions = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, fixed_adjustments)
+    num_ops_train, datasets = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, horizontal_and_vertical, fixed_adjustments)
+    num_ops_val, datasets_validation_functions = get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target, depth, max_shift, horizontal, horizontal_and_vertical, fixed_adjustments)
 
-    all_datasets = {'training': datasets, 'validation': datasets_validation_functions, 'testing': benchamrk_datasets[dataset_order[0]]}
+    all_datasets = {'training': datasets,
+                    'validation': datasets_validation_functions,
+                    'testing': benchamrk_datasets[dataset_name]}
 
     save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp))
 
@@ -586,7 +701,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
                     ('variant string', variant_string)]
 
     df = pd.DataFrame(summary_data, columns=['Parameters', 'Values'])
-    df.to_csv(os.path.join(save_loc, 'summary_exp'+str(exp)+'_'+variant_string+'.csv'))
+    df.to_csv(os.path.join(save_loc, 'summary_exp'+str(exp)+'_'+variant_string+'_'+dataset_name+'.csv'))
 
     # for i, (function_string, training_dataset, validation_dataset, testing_dataset) in enumerate(datasets_test_functions):
 
@@ -597,98 +712,96 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
     #     df.to_csv(os.path.join(save_loc, 'testing_function_dataset'+str(i)+'_rep'+str(rep)+'.csv'), index=False)
 
-    EA = EquationAdjustor(rng=rng,
-                          initial_hidden_values=hidden_values,
-                          hidden_weights=hidden_weights,
-                          activation=np.tanh,
-                          horizontal=horizontal,
-                          initial_adjustment=initial_adjustment,
-                          initial_parameter=initial_parameter, # should go in __init__. scaling will be 1
-                          num_adjustments=num_adjustments,
-                          fixed_adjustments=fixed_adjustments,
-                          variant_string=variant_string)
-
-
-    es = cma.CMAEvolutionStrategy(weights, sigma)
-
     np.random.seed(seed)
 
-    es.opts.set({'maxfevals': function_evals,
-                 # 'ftarget': 1e-10,
-                 'tolfun': 0,
-                 # 'tolfunhist': 0,
-                 # 'popsize': 1000,
-                 'seed': seed,
-                 'verb_log': 0,
-                 'timeout': timeout})
+    # get number of operations to evaluate training and validation datasets
+    num_ops_per_tree = num_ops_train + num_ops_val
+    print('seed', seed)
+    cmaes_options = {'maxfevals': function_evals,
+                     # 'ftarget': 1e-10,
+                     'tolfun': 0,
+                     # 'tolfunhist': 0,
+                     # 'popsize': 100,
+                     'seed': seed,
+                     'verb_log': 0,
+                     'timeout': timeout}
+    es = cma.CMAEvolutionStrategy(weights, sigma, cmaes_options)
 
     mu = es.sp.weights.mu
     popsize = es.popsize
     print('mu', mu)
     print('popsize', popsize)
 
-    # get number of operations to evaluate training and validation datasets
-    num_ops_for_all_trees = num_ops_train + num_ops_val
-
-    # multiply by dataset size (train + validation) + RMS
-    num_ops_per_adjustment_per_individual = num_ops_for_all_trees*40 + 3*40 + 1
-
-    num_ops_per_adjustment = num_ops_per_adjustment_per_individual*popsize
-
-    num_ops_per_gen_only_trees = num_ops_per_adjustment*num_adjustments
-
-    indegree = [num_input, len(hidden_values)]
-
-    nn_ops_per_eval = sum([d-1 for d in indegree])+len(weights)
-
-    nn_ops_per_gen = num_adjustments*nn_ops_per_eval
-
     # get CMA-ES ops
     n = len(weights)
 
     # eq: 5, 9, y, 24, 30, c_1, c_mu, 31, 37
-    cma_ops_per_gen = (2*n) + 2*(mu-1)*n + (n+1) + (2*n+7) + (2+4*mu+4*n**2+n) + (2) + (3) + (6 + 5*n**2) + (5*n+5)
-    num_ops_per_gen = num_ops_per_gen_only_trees + cma_ops_per_gen + nn_ops_per_gen
+    cma_ops_per_gen = (2*n) + 2*(mu-1)*n + (n+1) + (2*n+7) + (2+4*mu+4*n**2+n) + (2) + (3) + (6 + 5*n**2) + (2*n+5)
+    # num_ops_per_gen_no_trees = cma_ops_per_gen + nn_ops_per_gen
 
-    total_compute = 0
+    EA = EquationAdjustor(rng=rng,
+                          initial_hidden_values=hidden_values,
+                          hidden_weights=hidden_weights,
+                          activation=np.tanh,
+                          horizontal=horizontal,
+                          horizontal_and_vertical=horizontal_and_vertical,
+                          initial_adjustment=initial_adjustment,
+                          initial_parameter=initial_parameter, # should go in __init__. scaling will be 1
+                          num_adjustments=num_adjustments,
+                          fixed_adjustments=fixed_adjustments,
+                          variant_string=variant_string,
+                          num_ops_per_tree=num_ops_per_tree,
+                          num_input=num_input,
+                          num_weights=num_weights)
+
     test_changes = 0
 
-    best_individual_data = [['Generation', 'Test Error', 'Test Fitness', 'Number of Floating Point Operations']]
+    best_individual_data = [['Generation', 'Mean Validation Fitness', 'Test Error', 'Test Fitness', 'Number of Floating Point Operations']]
     gen = 0
     return_train_val = True
     return_avg = True
     return_test = False
 
-    while not es.stop():
+    while max_compute_training >= EA.total_compute:
 
-        solutions = es.ask()
-        es.tell(solutions, [EA.cma_es_function(x, rng, all_datasets, return_train_val, return_avg, return_test) for x in solutions])
-        es.disp()
+        while not es.stop():
 
-        gen += 1
+            solutions = es.ask()
+            es.tell(solutions, [EA.cma_es_function(x, rng, all_datasets, return_train_val, return_avg, return_test) for x in solutions])
+            es.disp()
 
-        # update number of operations
-        total_compute += num_ops_per_gen
+            gen += 1
 
-        # save best individuals during training
-        errors, fitnesses = EA.cma_es_function(best[1], rng, all_datasets, return_train_val=False, return_test=True)
+            # update number of operations
+            EA.total_compute += cma_ops_per_gen
 
-        best_individual_data.append([gen, errors['testing'][-1], fitnesses['testing'][-1], total_compute])
+            # save best individuals during training
+            errors, fitnesses, _ = EA.cma_es_function(best[1], rng, all_datasets, return_train_val=False, return_test=True)
 
-        # check if max number of computations have occured
-        if max_compute_training < total_compute:
-            break
+            best_individual_data.append([gen, best[0], errors['testing'][-1], fitnesses['testing'][-1], EA.total_compute])
 
-        # Update test functions
-        if total_compute > (1+test_changes)*max_compute_training/(len(benchamrk_datasets)-1):
+            print('total compute', EA.total_compute)
 
-            test_changes += 1
-            all_datasets['testing'] = benchamrk_datasets[dataset_order[test_changes]]
+            # check if max number of computations have occured
+            if max_compute_training < EA.total_compute:
+                break
 
-    es.result_pretty()
+            # Update test functions
+            # if total_compute > (1+test_changes)*max_compute_training/(len(benchamrk_datasets)-1):
+
+            #     test_changes += 1
+            #     all_datasets['testing'] = benchamrk_datasets[dataset_order[test_changes]]
+
+        es.result_pretty()
+
+        weights = rng.uniform(-1, 1, size=num_weights)
+
+        cmaes_options['seed'] += 1000
+
+        es = cma.CMAEvolutionStrategy(weights, sigma, cmaes_options)
 
     df = pd.DataFrame(best_individual_data[1:], columns=best_individual_data[0])
-    df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'_'+variant_string+'.csv'))
+    df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'_'+variant_string+'_'+dataset_name+'.csv'))
 
     # xopt, es = cma.fmin2(EA.cma_es_function, weights, sigma,
     #                      args=(rng, all_datasets, return_all_errors),
@@ -710,47 +823,45 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
 
     # all_datasets['validation'] = datasets_validation_functions_consistent
 
-    start_time = time.time()
+    # start_time = time.time()
 
-    errors, fitnesses = EA.cma_es_function(xopt, rng, all_datasets, return_train_val=True, return_test=True)
+    errors, fitnesses, compute = EA.cma_es_function(xopt, rng, all_datasets, return_train_val=True, return_test=True)
 
-    test_time = time.time() - start_time
+    # test_time = time.time() - start_time
 
-    if not debug_mode:
+    # if not debug_mode:
 
-        test_computation = test_time*cycles_per_second
+    #     test_computation = test_time*cycles_per_second
 
-        with open(os.path.join(save_loc, 'test_computation_and_cycles_rep'+str(rep)+'_'+variant_string+'.txt'), mode='w') as f:
-            f.write(str(test_computation)+' '+str(cycles_per_second))
+    #     with open(os.path.join(save_loc, 'test_computation_and_cycles_rep'+str(rep)+'_'+variant_string+'_'+dataset_name+'.txt'), mode='w') as f:
+    #         f.write(str(test_computation)+' '+str(cycles_per_second))
 
     # save the best individual
     data = [list(xopt)]
     df = pd.DataFrame(data).transpose()
-    df.to_csv(os.path.join(save_loc, 'best_ind_weights_rep'+str(rep)+'_'+variant_string+'.csv'), header=['trained weights'])
+    df.to_csv(os.path.join(save_loc, 'best_ind_weights_rep'+str(rep)+'_'+variant_string+'_'+dataset_name+'.csv'), header=['trained weights'])
                                                                               # 'untrained weights',
                                                                               # 'initial hidden values'])
-    # save the best individual function validation info
-    header = ['Target', 'Validation Fitness']
+    # # save the best individual function validation info
+    # header = ['Target', 'Validation Fitness']
 
-    table = [['Validation Function ' + str(i), f] for i, f in enumerate(fitnesses['validation'])]
+    # table = [['Validation Function ' + str(i), f] for i, f in enumerate(fitnesses['validation'])]
 
-    df = pd.DataFrame(table, columns=header)
-    df.to_csv(os.path.join(save_loc, 'best_ind_validation_rep'+str(rep)+'_'+variant_string+'.csv'))
+    # df = pd.DataFrame(table, columns=header)
+    # df.to_csv(os.path.join(save_loc, 'best_ind_validation_rep'+str(rep)+'_'+variant_string+'_'+dataset_name+'.csv'))
 
     # save the best individual function testing info
-    header = ['Target', 'Adjustment', 'Test Error', 'CPU Time', 'Computation']
+    header = ['Adjustment', 'Test Error', 'Test Fitness', 'FLOPs']
 
     table = []
 
-    for target in errors['testing']:
+    for i, e in enumerate(errors['testing']):
 
-        for i, e in enumerate(errors['testing']):
-
-            table.append([target, i, e, 0, total_compute+nn_ops_per_eval+num_ops_per_adjustment_per_individual])
+        table.append([i, e, fitnesses['testing'][i], compute[i]])
 
 
     df = pd.DataFrame(table, columns=header)
-    df.to_csv(os.path.join(save_loc, 'best_ind_testing_rep'+str(rep)+'_'+variant_string+'.csv'))
+    df.to_csv(os.path.join(save_loc, 'best_ind_testing_rep'+str(rep)+'_'+variant_string+'_'+dataset_name+'.csv'))
 
 
     # # save the best individual
@@ -770,7 +881,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, horizontal, d
     #                                                                           'initial hidden values'])
 
 
-def get_benchmark_datasets(rng, max_shift, horizontal):
+def get_benchmark_datasets(rng, max_shift, horizontal, horizontal_and_vertical):
 
     # target_names = ['quartic', 'septic', 'nonic', 'keijzer11', 'keijzer12', 'keijzer13', 'keijzer14',
     #                 'keijzer15', 'r1', 'r2', 'r3']
@@ -793,22 +904,29 @@ def get_benchmark_datasets(rng, max_shift, horizontal):
     
         shift = rng.uniform(0, max_shift)
 
-        x_train = rng.uniform(-1, 1, 20)
-        y_train = rng.uniform(-1, 1, 20)
+        x0_train = rng.uniform(-1, 1, 20)
+        x1_train = rng.uniform(-1, 1, 20)
 
-        input_train = np.vstack((x_train, y_train))
+        input_train = np.vstack((x0_train, x1_train))
 
-        x_val = rng.uniform(-1, 1, 20)
-        y_val = rng.uniform(-1, 1, 20)
+        x0_val = rng.uniform(-1, 1, 20)
+        x1_val = rng.uniform(-1, 1, 20)
 
-        input_val = np.vstack((x_val, y_val))
+        input_val = np.vstack((x0_val, x1_val))
 
-        x_test = rng.uniform(-1, 1, 1000)
-        y_test = rng.uniform(-1, 1, 1000)
+        x0_test = rng.uniform(-1, 1, 1000)
+        x1_test = rng.uniform(-1, 1, 1000)
 
-        input_test = np.vstack((x_test, y_test))
+        input_test = np.vstack((x0_test, x1_test))
 
-        if horizontal:
+        if horizontal_and_vertical:
+
+            shift_horizontal = rng.uniform(0, max_shift)
+            shift_vertical = rng.uniform(0, max_shift)
+
+            lambda_string = 'lambda x: '+f_func.replace('x[0]', 'np.add(x[0],'+str(shift_horizontal)+')') + '+' +str(shift_vertical)
+
+        elif horizontal:
 
             lambda_string = 'lambda x: '+f_func.replace('x[0]', 'np.add(x[0],'+str(shift)+')')
 
@@ -833,7 +951,8 @@ def get_benchmark_datasets(rng, max_shift, horizontal):
 
 
 def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target,
-                                    depth, max_shift=50, horizontal=False, fixed_adjustments=False):
+                                    depth, max_shift=50, horizontal=False, horizontal_and_vertical=False,
+                                    fixed_adjustments=False):
     """Generate a dataset for multiple functions. Keep track of
     the base function(s) connected with the dataset.
 
@@ -856,7 +975,7 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
         List of tuple containnig (base_function, dataset).
     """
 
-    primitives = ['*', '+', '%', '-']
+    primitives = ['*', '+', '%', '-', 'sin', 'cos']
     terminals = ['#x', '#f']
 
     # Pick the number of input variables
@@ -888,7 +1007,10 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
         num_leaves, num_nodes = t.get_num_leaves(return_num_nodes=True)
         number_of_operations += num_nodes-num_leaves
         
-        if horizontal:
+        if horizontal_and_vertical:
+            number_of_operations += t.get_lisp_string().count('x0') + 1
+
+        elif horizontal:
             number_of_operations += t.get_lisp_string().count('x0')
 
         else:
@@ -896,18 +1018,25 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
 
     datasets = []
 
+    if fixed_adjustments:
+        rand_offset = rng.randint
+
+    else:
+        rand_offset = rng.uniform
+
     for i, t in enumerate(targets):
 
-        offset = np.zeros(num_base_function_per_target)
+        offset = [0]
 
-        if fixed_adjustments:
-            rand_offset = rng.randint
+        if horizontal_and_vertical:
 
+            while 0. in offset:
+                offset = rand_offset(-max_shift, max_shift, size=(num_base_function_per_target, 2))
+        
         else:
-            rand_offset = rng.uniform
 
-        while 0. in offset:
-            offset = rand_offset(-max_shift, max_shift, size=num_base_function_per_target)
+            while 0. in offset:
+                offset = rand_offset(-max_shift, max_shift, size=num_base_function_per_target)
 
         # base_file = os.path.join(os.environ['GP_DATA'], 'tree')
 
@@ -915,7 +1044,10 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
 
             base_function_string = t.convert_lisp_to_standard_for_function_creation()
 
-            if horizontal:
+            if horizontal_and_vertical:
+                function_string = base_function_string.replace('x[0]', 'np.add(x[0],'+str(o[0])+')')+'+'+str(o[1])
+
+            elif horizontal:
                 function_string = base_function_string.replace('x[0]', 'np.add(x[0],'+str(o)+')')
 
             else:
@@ -966,6 +1098,8 @@ if __name__ == '__main__':
                         type=str)
     parser.add_argument('-b', '--benchmark_index', help='Sets the benchmark to try to solve.',
                         type=int)
+    parser.add_argument('-hv', '--horizontal_and_vertical', help='Do horizontal and vertical shifts',
+                        action='store_true')
 
     args = parser.parse_args()
     print(args)
@@ -973,7 +1107,7 @@ if __name__ == '__main__':
     max_compute_training = 10**10
     max_compute_testing = 10**10
 
-    num_adjustments = 5
+    num_adjustments = 50
 
     if not args.horizontal_shift:
         max_shift = sum([1-k/num_adjustments for k in range(num_adjustments)])
@@ -997,9 +1131,10 @@ if __name__ == '__main__':
              'keijzer15': '(+ (* (x0) (- (* (0.2) (* (x0) (x0))) (1))) (* (x1) (- (* (0.5) (* (x1) (x1))) (1))))'}
 
 
-    benchamrk_datasets = get_benchmark_datasets(np.random.RandomState(args.rep+100*args.exp), max_shift, args.horizontal_shift)
+    benchamrk_datasets = get_benchmark_datasets(np.random.RandomState(args.rep+100*args.exp), max_shift, args.horizontal_shift, args.horizontal_and_vertical)
     jumbled_target_name_indices = [(args.benchmark_index+i+1) % len(target_names)  for i, _ in enumerate(target_names)] 
     jumbled_target_name = [target_names[i] for i in jumbled_target_name_indices]
+    target_name = target_names[args.benchmark_index]
 
     if args.genetic_programming:
 
@@ -1008,6 +1143,12 @@ if __name__ == '__main__':
         assert args.benchmark_index is not None, 'If using genetic programming, must specify --benchmark_index (-b)'
 
         assert 0 <= args.benchmark_index < len(benchamrk_datasets), '--benchmark_index (-b) too large or too small'
+
+        primitive_set = ['*', '+', '%', '-', 'sin', 'cos']
+        terminal_set = ['#x', '#f']
+
+        # Now do this for longer for the test function
+        test_function = target_names[args.benchmark_index]
 
         # get the name from list rather than benchmark_datasets,
         # which is a dict
@@ -1032,7 +1173,7 @@ if __name__ == '__main__':
 
             # dataset is the training dataset and validation dataset
             dataset = [benchamrk_datasets[function][0][1], benchamrk_datasets[function][0][2]]
-            test_data = benchamrk_datasets[function][0][3]
+            test_data = benchamrk_datasets[test_function][0][3]
 
             # get output_path, put target function being trained and
             # put the function that is to be the test.
@@ -1048,9 +1189,9 @@ if __name__ == '__main__':
 
             gp = GP.GeneticProgrammingAfpo(rng=rng,
                                            pop_size=100,
-                                           max_gens=30000,
-                                           primitive_set=['*', '+', '%', '-', 'sin', 'cos'],
-                                           terminal_set=['#x', '#f'],
+                                           max_gens=60000,
+                                           primitive_set=primitive_set,
+                                           terminal_set=terminal_set,
                                            # this is not data, which is passed
                                            data=dataset,
                                            test_data=test_data,
@@ -1065,30 +1206,27 @@ if __name__ == '__main__':
                           output_path=output_path,
                           output_file=output_file)
 
-        # Now do this for longer for the test function
-        function = target_names[args.benchmark_index]
-
         # dataset is the training dataset and validation dataset
-        dataset = [benchamrk_datasets[function][0][1], benchamrk_datasets[function][0][2]]
-        test_data = benchamrk_datasets[function][0][3]
+        dataset = [benchamrk_datasets[test_function][0][1], benchamrk_datasets[test_function][0][2]]
+        test_data = benchamrk_datasets[test_function][0][3]
 
         # get output_path, put target function being trained and
         # put the function that is to be the test.
         output_path = os.path.join(path, 'gp', target_names[args.benchmark_index], function)
         output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
 
-        num_vars = 2 if 'x1' in lisps[function] else 1
+        num_vars = 2 if 'x1' in lisps[test_function] else 1
 
         params = {'T': timeout,
                   'cycles_per_second': cycles_per_second,
-                  'given_individual': lisps[function],
+                  'given_individual': lisps[test_function],
                   'max_compute': max_compute_testing}
 
         gp = GP.GeneticProgrammingAfpo(rng=rng,
                                        pop_size=100,
-                                       max_gens=30000,
-                                       primitive_set=['*', '+', '%', '-', 'sin', 'cos'],
-                                       terminal_set=['#x', '#f'],
+                                       max_gens=60000,
+                                       primitive_set=primitive_set,
+                                       terminal_set=terminal_set,
                                        # this is not data, which is passed
                                        data=dataset,
                                        test_data=test_data,
@@ -1109,7 +1247,8 @@ if __name__ == '__main__':
 
         train_equation_corrector(rep=args.rep, exp=args.exp, timeout=args.timeout,
                                  fixed_adjustments=False, horizontal=args.horizontal_shift,
+                                 horizontal_and_vertical=args.horizontal_and_vertical,
                                  debug_mode=args.debug_mode, benchamrk_datasets=benchamrk_datasets,
-                                 dataset_order=jumbled_target_name,
+                                 dataset_name=target_name,
                                  max_shift=max_shift, num_adjustments=num_adjustments,
                                  variant_string=args.variant_string)
