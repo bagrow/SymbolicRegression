@@ -105,11 +105,16 @@ def get_emprical_cumulative_distribution_funtion(X):
     return p, X_sorted
 
 
-def plot_emprical_cumulative_distribution_funtion(X, labels=True, label=None):
+def plot_emprical_cumulative_distribution_funtion(X, labels=True, label=None, color=None):
 
     p, X = get_emprical_cumulative_distribution_funtion(X)
 
-    plt.step(X, p, 'o-', where='post', linewidth=0.5, ms=4, label=label)
+    if color is None:
+        plt.step(X, p, 'o-', where='post', linewidth=0.5, ms=4, label=label)
+
+    else:
+        plt.step(X, p, 'o-', where='post', linewidth=0.5, ms=4, label=label, color=color)
+
 
     if labels:
 
@@ -184,7 +189,6 @@ for test_function_name in function_names:
 
     for rep in range(nreps):
 
-        # rep = 1
         print('rep', rep)
 
         path_ea = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp))
@@ -198,6 +202,9 @@ for test_function_name in function_names:
 
             df_gp = pd.read_csv(os.path.join(path_gp, 'best_data_rep'+str(rep)+'.csv'))
 
+            if len(df_gp.loc[df_gp['Generation'] == 1]) > 1:
+                df_gp = df_gp.iloc[max(df_gp.loc[df_gp['Generation'] == 1].index):, :]
+
             diff_total_computation = df_gp['Computation'].values[-1]
 
             error_gp = df_gp['Testing Error'].values/df_gp['Testing Error'].values[0]
@@ -208,24 +215,42 @@ for test_function_name in function_names:
 
             if training_function_name == test_function_name:
                 plt.semilogy(computation_gp, error_gp, '-', color='C1', label='gp')
+                # plt.plot(np.linspace(0, 2*10**9, len(computation_gp)),computation_gp)
 
+                try:
+                    with open(os.path.join(path_gp, 'generation_no_more_descendants_rep'+str(rep)+'.txt'), 'r') as f:
+                        last_gen_given_function[training_function_name].append(int(f.read()))
+
+                except FileNotFoundError:
+                    last_gen_given_function[training_function_name].append(df_gp['Generation'].values[-1])
 
             else:
 
-                plt.semilogy(computation_gp, error_gp, '-', color='C1', label='gp', alpha=0.5)
-
+                plt.semilogy(computation_gp, error_gp, '-', color='C1', label='gp', alpha=1)
+                # plt.plot(np.linspace(0, 2*10**9, len(computation_gp)),computation_gp)
                 training_switches_error.append(error_gp[-1])
                 training_switches_comp.append(computation_gp[-1])
             # plt.text(np.mean(computation_gp), np.max(error_gp), training_function_name)
 
-            try:
-                with open(os.path.join(path_gp, 'generation_no_more_descendants_rep'+str(rep)+'.txt'), 'r') as f:
-                    last_gen_given_function[training_function_name].append(int(f.read()))
+        variant = 'MO0_RO0_PE0_ED0_TS0_HL1'
 
-            except FileNotFoundError:
-                last_gen_given_function[training_function_name].append(df_gp['Generation'].values[-1])
+        df_ea = pd.read_csv(os.path.join(path_ea, 'best_ind_rep'+str(rep)+'_'+variant+'_'+test_function_name+'.csv'))
 
-        # df_ea = pd.read_csv(os.path.join(path_ea, 'best_ind_testing_rep'+str(rep)+'_MO1_RO1_PE1_ED0.csv'))
+        error_ea = df_ea['Test Fitness']
+        computation_ea = df_ea['Number of Floating Point Operations']
+
+        plt.semilogy(computation_ea, error_ea, '-', color='C0', label='ea', alpha=1)
+
+        df_ea = pd.read_csv(os.path.join(path_ea, 'best_ind_testing_rep'+str(rep)+'_'+variant+'_'+test_function_name+'.csv'))
+
+        error_ea = df_ea['Test Error']
+        computation_ea = df_ea['FLOPs']
+
+        plt.semilogy(computation_ea, error_ea, '-', color='C0', label='ea', alpha=1)
+
+
+
+
         # df_sgp_test = pd.read_csv(os.path.join(path_sgp, 'test_error_FPM_0.0_1.0_'+function_name+'_'+str(rep+100*exp)+'.log'))
         # df_sgp_cpu = pd.read_csv(os.path.join(path_sgp, 'FPM_0.0_1.0_'+function_name+'_'+str(rep+100*exp)+'.log'))
 
@@ -248,7 +273,6 @@ for test_function_name in function_names:
         # error_sgp, computation_sgp = remove_duplicates(error_sgp, computation_sgp)
 
         # plt.semilogy(computation_sgp, error_sgp, '-', color='C2', label='semantic_gp')
-        # plt.semilogy(computation_ea, error_ea, '-', color='C0', label='ea')
 
         plt.xlabel('Number of Floating Point Computations')
         plt.ylabel('Test Error')
@@ -264,13 +288,21 @@ for test_function_name in function_names:
     plt.savefig(os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp), 'figures', 'ea_gp_comp_'+test_function_name+'.pdf'))
     
     plt.figure()
-    for f in last_gen_given_function:
-        plot_emprical_cumulative_distribution_funtion(last_gen_given_function[f], label=f)
+    for i, f in enumerate(last_gen_given_function):
+
+        if i > 0:
+            plot_emprical_cumulative_distribution_funtion(last_gen_given_function[f], label=f)
+
+        else:
+            plot_emprical_cumulative_distribution_funtion(last_gen_given_function[f], label=f, color='k')
+
 
     plt.xlabel('Last Generation Descenant of Given Function is Alive')
+    # plt.title(test_function_name)
+    plt.xscale('log')
     plt.legend()
-    plt.savefig(os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp), 'figures', 'last_gen_alive_'+test_function_name+'.pdf'))
-    exit()
+    plt.savefig(os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp), 'figures', 'last_gen_alive.pdf'))
+    continue
     # compare (p-value) test values at max computation for EA
     ea_test_final = [data_ea['test error'][rep][-1] for rep in data_ea['test error']]
 
