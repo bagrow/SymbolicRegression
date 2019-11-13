@@ -278,6 +278,8 @@ class GeneticProgramming:
         for i, individual in enumerate(self.pop):
             self.evaluate_individual(individual, self.data)
 
+        self.number_of_operations += self.get_num_ops_for_current_generation()
+
 
     def evaluate_individual(self, ind, data, skip=False):
         """Evaluate the individual fitness and number of nodes.
@@ -589,8 +591,6 @@ class GeneticProgramming:
 
         best_data = []
 
-        self.number_of_operations += self.get_num_ops_for_current_generation()
-
         if self.save_pop_data:
 
             pop_data = []
@@ -649,8 +649,6 @@ class GeneticProgramming:
             info[-1].insert(0, i)
 
             print(info[-1])
-
-            self.number_of_operations += self.get_num_ops_for_current_generation()
 
             # Save best individual based on validation error
             lisp = self.best_individual.get_lisp_string(actual_lisp=True)
