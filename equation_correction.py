@@ -6,10 +6,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import cma
+from keras.optimizers import Adam
+from keras.models import Model
+from keras.layers.core import Dense
+from keras.layers import Input
 
 import argparse
 import os
 import time
+import itertools
 
 
 def get_variant_dict(variant_string):
@@ -39,7 +44,7 @@ def get_variant_dict(variant_string):
         variant_dict[x[:-1]] = value
 
     # check all variants are there
-    for v in ['MO', 'RO', 'PE', 'ED', 'TS', 'HL']:
+    for v in ['MO', 'RO', 'PE', 'ED', 'TS', 'HL', 'X', 'PT']:
         if v not in variant_dict:
             print('Not all variant modifiers accounted for.', v, 'is missing.')
             exit()
@@ -141,6 +146,56 @@ class EquationAdjustor:
 
         # nn_ops_per_gen = num_adjustments*nn_ops_per_eval
 
+        if self.variant['PT']:
+
+            inputs = Input(shape=(60,))
+            dense_1_output = Dense(60, activation='relu')(inputs)
+            dense_2_output = Dense(60, activation='relu')(dense_1_output)
+            primitive_output = Dense(2, activation='softmax')(dense_2_output)
+            terminal_output = Dense(2, activation='softmax')(dense_2_output)
+            constant = Dense(1, activation='tanh')(dense_2_output)
+
+            self.model = Model(inputs=inputs, outputs=[primitive_output, terminal_output, constant])
+
+            self.primitives = ['*', '+']
+            self.terminals = ['x0', 'c']
+
+        else:
+
+            inputs = Input(shape=(3,))
+            dense_1_output = Dense(5, activation='relu')(inputs)
+            dense_2_output = Dense(5, activation='relu')(dense_1_output)
+            # primitive_output = Dense(2, activation='softmax')(dense_2_output)
+            # terminal_output = Dense(2, activation='softmax')(dense_2_output)
+            constant = Dense(1, activation='tanh')(dense_1_output)
+
+            self.model = Model(inputs=inputs, outputs=constant)
+
+            # self.primitives = ['*', '+']
+            # self.terminals = ['x0', 'c']
+
+
+    def update_weights(self, w):
+        """Update the weights in the neural network. These are the
+        weights in Keras/Tensorflow.
+
+        Parameters
+        ----------
+        w : 1D np.array
+            The weights that are begin evolved. Also,
+            the weights to be placed into self.model
+        """
+
+        weight_shapes = [(0,0)] + [layer.get_weights()[0].shape for layer in self.model.layers[1:]]
+
+        w_split_indices = np.cumsum([np.product(weight_shapes, axis=1)])
+
+        w_split = [w[w_split_indices[i-1]:w_split_indices[i]] for i, _ in list(enumerate(w_split_indices))[1:]]
+        w_split_shaped = [ws.reshape(shape) for ws, shape in zip(w_split, weight_shapes[1:])]
+
+        for layer, wi in zip(self.model.layers[1:], w_split_shaped):
+            layer.set_weights([wi, np.zeros(len(wi[0]))])
+
 
     def set_num_adjustments(self, num_adjustments):
 
@@ -153,7 +208,7 @@ class EquationAdjustor:
             self.step = self.initial_adjustment/self.num_adjustments
 
 
-    def reinitialize(self, function_string, dataset):
+    def reinitialize(self, tree, dataset):
         """For all variables that change during
         equation adjustment, set them to their 
         initial values."""
@@ -171,9 +226,16 @@ class EquationAdjustor:
         # In case index is passed into nn
         self.index = 0
 
+        self.order = None
+        self.thingy = False
+        self.hsp = None
+
         # init signed error
         x = dataset[:, 1:]
         y = dataset[:, 0]
+
+        self.tree = tree
+        function_string = self.tree.convert_lisp_to_standard_for_function_creation()
 
         # this is a bit pointless with self.parameter=0, but it does
         # get initial error
@@ -182,7 +244,7 @@ class EquationAdjustor:
                                  vshift=self.vshift_parameter,
                                  hscale=self.hscale_parameter,
                                  vscale=self.vscale_parameter)
- 
+
         predicted_output = f(x.T)
         self.errors = [np.sqrt(np.mean(np.power(predicted_output-y, 2)))]
         self.signed_error = np.mean(y-predicted_output)
@@ -193,6 +255,12 @@ class EquationAdjustor:
 
         self.cpu_start_time = time.process_time()
         self.cpu_time = []
+
+        self.normalization_factor = np.max(np.abs(y))
+        self.current_data = {'x': x if x.shape[1] == 2 else np.hstack((x, np.zeros(x.shape))),
+                             'f(x)': predicted_output/self.normalization_factor,
+                             'y': y/self.normalization_factor}
+        # print(self.current_data)
 
 
     def get_value(self, input_weights, hidden_weights, output_weights, input, hidden_to_hidden_weights):
@@ -216,21 +284,26 @@ class EquationAdjustor:
             The value of the nodes in the output layer.
         """
 
-        if self.variant['HL'] > 1:
-
-            self.hidden_values[0] = self.activation(np.matmul(input, input_weights))# + np.matmul(self.hidden_values, hidden_weights))
-
-            for i, _ in enumerate(self.hidden_values[1:]):
-                self.hidden_values[i+1] = self.activation(np.matmul(self.hidden_values[i], hidden_to_hidden_weights[i]))# + np.matmul(self.hidden_values, hidden_weights))
-
-            output = self.activation(np.matmul(self.hidden_values[-1], output_weights))
+        if self.variant['PT']:
+            output = self.model.predict(input.reshape(1, 60))
 
         else:
 
-            self.hidden_values = self.activation(np.matmul(input, input_weights))# + np.matmul(self.hidden_values, hidden_weights))
-            output = self.activation(np.matmul(self.hidden_values, output_weights))
+            if self.variant['HL'] > 1:
 
-        self.total_compute += self.nn_ops_per_eval
+                self.hidden_values[0] = self.activation(np.matmul(input, input_weights))# + np.matmul(self.hidden_values, hidden_weights))
+
+                for i, _ in enumerate(self.hidden_values[1:]):
+                    self.hidden_values[i+1] = self.activation(np.matmul(self.hidden_values[i], hidden_to_hidden_weights[i]))# + np.matmul(self.hidden_values, hidden_weights))
+
+                output = self.activation(np.matmul(self.hidden_values[-1], output_weights))
+
+            else:
+
+                self.hidden_values = self.activation(np.matmul(input, input_weights))# + np.matmul(self.hidden_values, hidden_weights))
+                output = self.activation(np.matmul(self.hidden_values, output_weights))
+
+            self.total_compute += self.nn_ops_per_eval
 
         return output
 
@@ -259,56 +332,112 @@ class EquationAdjustor:
         else:
             num_hidden = len(self.hidden_values)
 
-        if self.shift:
+        if self.variant['PT']:
 
-            if self.vertical and self.horizontal:
+            data_rows = 20
+            input_list = [(self.current_data['x'][i][0], self.current_data['y'][i], self.current_data['f(x)'][i]) for i in range(data_rows)]
+            input = np.array(list(itertools.chain(*input_list)))
 
-                input = [signed_error, prev_error, error, *output]
+        elif self.shift:
 
-            elif self.horizontal:
+            # if self.vertical and self.horizontal:
 
-                input = [error]
+            #     input = [signed_error, prev_error, error, *output]
 
-                # timestep (count down)
-                if self.variant['TS']:
-                    input.append(1-timestep/self.num_adjustments)
+            if self.horizontal:
 
-                # prev error
-                if self.variant['PE']:
-                    input.append(prev_error)
+                if self.variant['X']:
 
-                # error difference
-                if self.variant['ED']:
-                    input.append(error - prev_error)
+                    # Really want to pick indices so that the
+                    # x values are unique (unless the second
+                    # variable is faked -- all zeros)
+                    # index1 = 0
+                    # index2 = -1
 
-                # if recursive output
-                if self.variant['RO']:
+                    # input = [*self.current_data['x'][index1],
+                    #          (self.current_data['y'][index1] - self.current_data['f(x)'][index1]),#/self.normalization_factor,
+                    #          *self.current_data['x'][index2],
+                    #          (self.current_data['y'][index2] - self.current_data['f(x)'][index2])]#/self.normalization_factor)]
 
-                    # if multiple output
-                    if self.variant['MO']:
-                        input.extend(np.eye(2)[int(prev_index)])
+                    data_rows = 20  #len(self.current_data['x'])
+                    # if data_rows > 20:
+                    #     print('strinking output')
+                    #     indices = self.rng.choice(data_rows, size=20, replace=False)
+                    #     self.current_data['x'] = self.current_data['x'][indices]
 
-                    else:
-                        input.extend(output)
+                    input_list = [(*self.current_data['x'][i], self.current_data['y'][i]-self.current_data['f(x)'][i]) for i in range(data_rows)]
+                    
+                    # for input in input_list:
+                    #     print(input)
+
+                    input = np.array(list(itertools.chain(*input_list)))
+                    # print(input)
+                    # plt.plot(self.current_data['x'][:, 0], self.current_data['y'])
+                    # plt.plot(self.current_data['x'][:, 0], self.current_data['f(x)'])
+                    # plt.show()
+                    # exit()
+
+                    # if np.any(np.abs(input) > 1):
+                    #     print('timestep', timestep)
+                    #     print('input', input)
+                    #     exit()
+
+                else:
+
+                    input = [error]
+
+                    # timestep (count down)
+                    if self.variant['TS']:
+                        input.append(1-timestep/self.num_adjustments)
+
+                    # prev error
+                    if self.variant['PE']:
+                        input.append(prev_error)
+
+                    # error difference
+                    if self.variant['ED']:
+                        input.append(error - prev_error)
+
+                    # if recursive output
+                    if self.variant['RO']:
+
+                        # if multiple output
+                        if self.variant['MO']:
+                            input.extend(np.eye(2)[int(prev_index)])
+
+                        else:
+                            input.extend(output)
 
             elif self.vertical:
                 input = [signed_error]
 
         elif self.scale:
 
-            input = [error]
+            if self.variant['X']:
 
-            # timestep (count down)
-            if self.variant['TS']:
-                input.append(1-timestep/self.num_adjustments)
+                # Really want to pick indices so that the
+                # x values are unique (unless the second
+                # variable is faked -- all zeros)
+                index1 = 0
+                index2 = -1
+                input = [*self.current_data['x'][index1],
+                         (self.current_data['y'][index1] - self.current_data['f(x)'][index1]),#/self.normalization_factor,
+                         *self.current_data['x'][index2],
+                         (self.current_data['y'][index2] - self.current_data['f(x)'][index2])]#/self.normalization_factor)]
 
-            # prev error
-            if self.variant['PE']:
-                input.append(prev_error)
+            # input = [error]
 
-            # if recursive output
-            if self.variant['RO']:
-                input.extend(output)
+            # # timestep (count down)
+            # if self.variant['TS']:
+            #     input.append(1-timestep/self.num_adjustments)
+
+            # # prev error
+            # if self.variant['PE']:
+            #     input.append(prev_error)
+
+            # # if recursive output
+            # if self.variant['RO']:
+            #     input.extend(output)
 
         # Take one node for the signed error.
         input_weights = w[:num_hidden*len(input)].reshape((len(input), num_hidden))
@@ -336,7 +465,10 @@ class EquationAdjustor:
 
         new_output = self.get_value(input_weights, hidden_weights, output_weights, input, hidden_to_hidden_weights)
 
-        if self.shift:
+        if self.variant['PT']:
+            index = None
+
+        elif self.shift:
 
             if self.vertical and self.horizontal:
                 index = np.argmax(new_output[:2])
@@ -346,11 +478,26 @@ class EquationAdjustor:
 
         elif self.scale:
             index = np.argmax(new_output)
+        
+        # if (input[1]-input[3])/(input[0]-input[2]) > 0:
 
+        #     new_output = [-timestep]
+
+        # else:
+        #     new_output = [timestep]
+
+        # print(new_output)
+        # plt.close('all')
+        # plt.figure()
+        # plt.plot(self.current_data['x'][:, 0], self.current_data['y'], 'o', color='C2', label='y')
+        # # plt.plot(self.current_data['x'], self.current_data['f(x)'], 'o', color='C1', label='f(x)')
+        # plt.show()
+        # input('press enter')
+        # print(new_output)
         return index, new_output
 
 
-    def update_equation(self, timestep, function_string, dataset, w):
+    def update_equation(self, timestep, tree, dataset, w):
         """
 
         Parameters
@@ -378,7 +525,30 @@ class EquationAdjustor:
 
         # self.total_compute += 3 # for division to go from error to fitness
 
-        if self.shift:
+        if self.variant['PT']:
+
+            # Assume adjustment location is 
+            # at the root of the tree.
+            primitive = self.primitives[np.argmax(self.output[0])]
+            terminal = self.terminals[np.argmax(self.output[1])]
+
+            if terminal == 'c':
+                terminal = str(self.output[2][0][0])
+
+            # update tree
+            old_lisp = self.tree.get_lisp_string(actual_lisp=True)
+
+            new_lisp = '('+primitive + ' ' + old_lisp + ' ' + terminal + ')'
+
+            self.tree = GP.Tree(rng=self.tree.rng,
+                                tree=new_lisp,
+                                num_vars=self.tree.num_vars,
+                                actual_lisp=True)
+
+            function_string = self.tree.convert_lisp_to_standard_for_function_creation()
+            f = eval('lambda x: '+function_string)
+
+        elif self.shift:
 
             if self.vertical and self.horizontal:
 
@@ -413,7 +583,7 @@ class EquationAdjustor:
                 else:
                     print('I did something wrong with index in vertical and horizontal True.')
 
-            elif self.horizontal:
+            elif self.horizontal and not self.thingy:
 
                 if self.variant['MO']:
 
@@ -432,6 +602,7 @@ class EquationAdjustor:
                 else:
 
                     self.hshift_parameter += self.output[0]
+                    # print(self.hshift_parameter, end=' ')
 
             elif self.vertical:
 
@@ -445,23 +616,40 @@ class EquationAdjustor:
             if self.vertical:
                 self.vscale_parameter += self.output[0]
 
-        f = self.adjust_function(function_string, 
-                                 hshift=self.hshift_parameter,
-                                 vshift=self.vshift_parameter,
-                                 hscale=self.hscale_parameter,
-                                 vscale=self.vscale_parameter)
+
+        if not self.variant['PT']:
+            f = self.adjust_function(function_string, 
+                                     hshift=self.hshift_parameter,
+                                     vshift=self.vshift_parameter,
+                                     hscale=self.hscale_parameter,
+                                     vscale=self.vscale_parameter)
 
         x = dataset[:, 1:]
         y = dataset[:, 0]
 
+        predicted_output = f(x.T)
         self.errors.append(np.sqrt(np.mean(np.power(y-f(x.T), 2))))
         self.signed_error = np.mean(y-f(x.T))
 
         ops_in_function = function_string.count('(')
         self.total_compute += 2*len(dataset) + 3*len(dataset) + 1 + ops_in_function*len(dataset)
 
+        self.current_data = {'x': x if x.shape[1] == 2 else np.hstack((x, np.zeros(x.shape))),
+                             'f(x)': predicted_output/self.normalization_factor,
+                             'y': y/self.normalization_factor}
 
-    def run_equation_corrector(self, function_string, dataset, w, return_compute=False, return_fitnesses=False):
+        # plt.figure()
+        # plt.plot(x, predicted_output, 'o', color='C1', label='pred')
+        # plt.plot(x, y, 'o', color='C2', label='y')
+        # plt.legend()
+        # plt.show()
+        # print(self.errors[-1]/self.errors[0])
+
+
+    def run_equation_corrector(self, tree, dataset, w, return_compute=False, return_fitnesses=False):
+
+        if self.variant['PT']:
+            self.update_weights(w)
 
         compute = [self.total_compute]
 
@@ -471,9 +659,16 @@ class EquationAdjustor:
                 print('adjustment is negative! Stopping!')
                 exit()
 
-            self.update_equation(timestep, function_string, dataset, w)
+            self.update_equation(timestep, tree, dataset, w)
 
-            self.adjustment -= self.step
+            if timestep <= 1000:
+                # print('linear adjustment', self.adjustment)
+                self.adjustment -= self.step
+                a = self.adjustment
+
+            else:
+                print('nonlinear adjustment', self.adjustment)
+                self.adjustment = np.exp(-timestep)#1/(timestep+1)
             
             compute.append(self.total_compute)
             
@@ -503,26 +698,35 @@ class EquationAdjustor:
 
         if return_train_val:
 
-            for function_string, training_dataset, validation_dataset, testing_dataset in datasets['training']:
+            for tree, training_dataset, validation_dataset, testing_dataset, offset in datasets['training']:
 
                 # training dataset
-                self.reinitialize(function_string, training_dataset)
+                self.reinitialize(tree, training_dataset)
 
-                training_fitness = self.run_equation_corrector(function_string, training_dataset, w, return_fitnesses=False)
+                training_fitness = self.run_equation_corrector(tree, training_dataset, w, return_fitnesses=False)
 
                 training_fitnesses.append(training_fitness[0])
+                # print(training_fitnesses[-1], self.errors[-1]/self.errors[0], self.errors[0])
+                # exit()
                 training_errors.append(self.errors[-1])
 
+                # if self.shift and self.horizontal:
+                #     training_fitnesses.append(abs(self.hshift_parameter-offset['hshift']))
+
+            # print('validation!!!!!!!!!!!!!!!!!!!!!!!!!!')
             # use validation functions to get validation dataset
-            for function_string, training_dataset, validation_dataset, testing_dataset in datasets['validation']:
+            for tree, training_dataset, validation_dataset, testing_dataset, offset in datasets['validation']:
 
                 # validation dataset
-                self.reinitialize(function_string, validation_dataset)
+                self.reinitialize(tree, validation_dataset)
+                # print('offset', offset)
+                validation_fitness = self.run_equation_corrector(tree, validation_dataset, w, return_fitnesses=False)
 
-                validation_fitness = self.run_equation_corrector(function_string, validation_dataset, w, return_fitnesses=False)
-
+                # if self.shift and self.horizontal:
+                #     validation_fitnesses.append(abs(self.hshift_parameter-offset['hshift']))
                 validation_fitnesses.append(validation_fitness[0])
                 validation_errors.append(self.errors[-1])
+                # print(validation_fitness, self.errors[-1])
 
         if return_test:
 
@@ -535,12 +739,12 @@ class EquationAdjustor:
             # testing_errors = []
             temp_total_compute = self.total_compute
 
-            for function_string, training_dataset, validation_dataset, testing_dataset in datasets['testing']:
+            for tree, training_dataset, validation_dataset, testing_dataset in datasets['testing']:
 
                 # testing dataset
-                self.reinitialize(function_string, testing_dataset)
+                self.reinitialize(tree, testing_dataset)
 
-                testing_fitness, compute = self.run_equation_corrector(function_string, testing_dataset, w, return_compute=True)
+                testing_fitness, compute = self.run_equation_corrector(tree, testing_dataset, w, return_compute=True)
 
                 # testing_fitnesses.append(testing_fitness)
                 # testing_errors.append(self.errors[-1])
@@ -555,15 +759,19 @@ class EquationAdjustor:
             global best
 
             # mean_validation_fitness = np.mean(np.sum(validation_fitnesses, axis=1))
-            mean_validation_fitness = np.mean(validation_fitnesses)
+            mean_validation_fitness = np.sum(validation_errors)
 
             if 'best' in globals():
 
                 if mean_validation_fitness < best[0]:
-
+                    # print('offstes', offsets)
+                    # print(validation_fitnesses)
+                    # print('errors')
+                    # for t, v in zip(training_errors, validation_errors):
+                    #     print(t, v)
                     best = (mean_validation_fitness, w)
-                    print('new best', best[0])#, np.mean([v[-1] for v in validation_fitnesses]))
-
+                    print('new best', best[0], np.sum(validation_errors), np.sum(training_errors))#, np.mean([v[-1] for v in validation_fitnesses]))
+                    # exit()
             else:
 
                 best = (mean_validation_fitness, w)
@@ -578,7 +786,7 @@ class EquationAdjustor:
 
             if return_avg:
                 # return np.mean(np.sum(training_fitnesses, axis=1))
-                return np.mean(training_fitnesses)
+                return np.sum(training_errors)
 
             errors['validation'] = validation_errors
             fitnesses['validation'] = validation_fitnesses
@@ -634,12 +842,12 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
                              num_adjustments, max_adjustment, variant_string):
 
     # define parameters
-    num_targets = 50
+    num_targets = 5
     num_test_targets = 1
     num_base_function_per_target = 1
     depth = 6
 
-    sigma = 2.
+    sigma = 0.5
     function_evals = float('inf')
     seed = 100*args.exp + args.rep + 1
 
@@ -656,7 +864,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
 
     rng = np.random.RandomState(rep+100*exp)
 
-    hidden_values = rng.uniform(-1, 1, size=10)
+    hidden_values = rng.uniform(-1, 1, size=25)
     hidden_weights = rng.uniform(-1, 1, size=(len(hidden_values), len(hidden_values)))
 
     variant = get_variant_dict(variant_string)
@@ -665,35 +873,42 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
 
         if vertical and horizontal:
 
-            num_input = 8
+            num_input = 6
             num_output = 5
 
         elif horizontal:
 
-            if variant['MO']:
-                num_output = 2
+            if variant['X']:
 
-            else:
+                num_input = 3*20
                 num_output = 1
 
-            num_input = 1
-
-            if variant['RO']:
+            else:
 
                 if variant['MO']:
-                    num_input += 2
+                    num_output = 2
 
                 else:
+                    num_output = 1
+
+                num_input = 1
+
+                if variant['RO']:
+
+                    if variant['MO']:
+                        num_input += 2
+
+                    else:
+                        num_input += 1
+
+                if variant['PE']:
                     num_input += 1
 
-            if variant['PE']:
-                num_input += 1
+                if variant['ED']:
+                    num_input += 1
 
-            if variant['ED']:
-                num_input += 1
-
-            if variant['TS']:
-                num_input += 1
+                if variant['TS']:
+                    num_input += 1
 
         elif vertical:
 
@@ -702,22 +917,34 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
 
     elif scale:
 
-        num_input = 1
+        if variant['X']:
+            num_input = 6
 
-        if variant['RO']:
-            num_input += 1
+        else:
+            num_input = 1
 
-        if variant['PE']:
-            num_input += 1
+            if variant['RO']:
+                num_input += 1
 
-        if variant['TS']:
-            num_input += 1
+            if variant['PE']:
+                num_input += 1
+
+            if variant['TS']:
+                num_input += 1
 
         num_output = 1
 
     additional_hidden_weights = (variant['HL']-1)*len(hidden_values)**2 
 
-    num_weights = num_input*len(hidden_values)+len(hidden_values)*num_output+additional_hidden_weights
+    if variant['PT']:
+        num_input = 3*20
+        num_output = 5
+        num_hidden = 60
+        num_hidden_layers = 2
+        num_weights = num_input*num_hidden + num_hidden**2 + num_hidden*num_output
+
+    else:
+        num_weights = num_input*len(hidden_values)+len(hidden_values)*num_output+additional_hidden_weights
 
     global best
 
@@ -748,6 +975,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
                                                                                  horizontal=horizontal,
                                                                                  vertical=vertical,
                                                                                  fixed_adjustments=fixed_adjustments)
+
 
     all_datasets = {'training': datasets,
                     'validation': datasets_validation_functions,
@@ -800,7 +1028,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
                      # 'ftarget': 1e-10,
                      'tolfun': 0,
                      # 'tolfunhist': 0,
-                     # 'popsize': 100,
+                     'popsize': 100,
                      'seed': seed,
                      'verb_log': 0,
                      'timeout': timeout}
@@ -837,18 +1065,23 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
 
     test_changes = 0
 
-    best_individual_data = [['Generation', 'Mean Validation Fitness', 'Test Error', 'Test Fitness', 'Number of Floating Point Operations']]
+    best_individual_data = [['Generation', 'Sum Train Fitness', 'Sum Validation Fitness', 'Test Error', 'Test Fitness', 'Number of Floating Point Operations']]
     gen = 0
     return_train_val = True
-    return_avg = True
+    return_avg = False
     return_test = False
 
     while max_compute_training >= EA.total_compute:
 
+        pop_data_summary = []
+
         while not es.stop():
 
             solutions = es.ask()
-            es.tell(solutions, [EA.cma_es_function(x, rng, all_datasets, return_train_val, return_avg, return_test) for x in solutions])
+            evaluate_pop = [EA.cma_es_function(x, rng, all_datasets, return_train_val, return_avg, return_test)[0] for x in solutions]
+            training_errors = [ep['training'][0] for ep in evaluate_pop]
+
+            es.tell(solutions, training_errors)
             es.disp()
 
             gen += 1
@@ -857,10 +1090,10 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
             EA.total_compute += cma_ops_per_gen
 
             # save best individuals during training
-            errors, fitnesses, _ = EA.cma_es_function(best[1], rng, all_datasets, return_train_val=False, return_test=True)
+            errors, fitnesses, _ = EA.cma_es_function(best[1], rng, all_datasets, return_train_val=True, return_test=True)
 
-            best_individual_data.append([gen, best[0], errors['testing'][-1], fitnesses['testing'][-1], EA.total_compute])
-
+            best_individual_data.append([gen, errors['training'][-1], best[0], errors['testing'][-1], fitnesses['testing'][-1], EA.total_compute])
+            pop_data_summary.append([gen, np.mean(training_errors), np.mean([ep['validation'][0] for ep in evaluate_pop])])
             print('total compute', EA.total_compute)
 
             # check if max number of computations have occured
@@ -883,6 +1116,9 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
 
     df = pd.DataFrame(best_individual_data[1:], columns=best_individual_data[0])
     df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'_'+variant_string+'_'+dataset_name+'.csv'))
+
+    df = pd.DataFrame(pop_data_summary, columns=['Generation', 'Mean Training Error', 'Mean Validation Error'])
+    df.to_csv(os.path.join(save_loc, 'pop_data_summary_rep'+str(rep)+'_'+variant_string+'_'+dataset_name+'.csv'), index=False)
 
     # xopt, es = cma.fmin2(EA.cma_es_function, weights, sigma,
     #                      args=(rng, all_datasets, return_all_errors),
@@ -979,6 +1215,18 @@ def get_benchmark_datasets(rng, max_adjustment, shift, scale, horizontal, vertic
                       'r2': '(x[0] ** 5 - (3 * (x[0] ** 3)) + 1) / (x[0] ** 2 + 1)',
                       'r3': '(x[0] ** 6 + x[0] ** 5) / (x[0] ** 4 + x[0] ** 3 + x[0] ** 2 + x[0] + 1)'}
 
+    lisps = {'quartic': '(* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))',
+         'septic': '(* (x0) (+ (1) (* (x0) (+ (-2) (* (x0) (+ (1) (* (x0) (+ (-1) (* (x0) (+ (1) (* (x0) (+ (-2) (x0)))))))))))))',
+         'nonic': '(* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))))))))))))',
+         'r1': '(% (* (+ (x0) (1)) (* (+ (x0) (1)) (+ (x0) (1)))) (+ (1) (* (x0) (+ (-1) (x0)))))',
+         'r2': '(% (+ (* (* (* (x0) (x0)) (x0)) (- (* (x0) (x0)) (3))) (1)) (+ (* (x0) (x0)) (1)))',
+         'r3': '(% (* (* (* (* (x0) (x0)) (x0)) (* (x0) (x0))) (+ (1) (x0))) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (* (x0) (+ (1) (x0)))))))))',
+         'keijzer11': '(+ (* (x0) (x1)) (sin (* (- (x0) (1)) (- (x1) (1)))))',
+         'keijzer12': '(+ (* (* (* (x0) (x0)) (x0)) (- (x0) (1))) (* (x1) (- (* (0.5) (x1)) (1))))',
+         'keijzer13': '(* (6) (* (sin (x0)) (cos (x1))))',
+         'keijzer14': '(% (8) (+ (2) (+ (* (x0) (x0)) (* (x1) (x1)))))',
+         'keijzer15': '(+ (* (x0) (- (* (0.2) (* (x0) (x0))) (1))) (* (x1) (- (* (0.5) (* (x1) (x1))) (1))))'}
+
     benchamrk_datasets = {}
 
     for f_name, f_func in target_strings.items():
@@ -998,14 +1246,15 @@ def get_benchmark_datasets(rng, max_adjustment, shift, scale, horizontal, vertic
 
         input_test = np.vstack((x0_test, x1_test))
 
-        f = get_function(rng=rng, f_str=f_func, max_adjustment=max_adjustment,
+        f, _ = get_function(rng=rng, f_str=f_func, max_adjustment=max_adjustment,
                          shift=shift, scale=scale, horizontal=horizontal, vertical=vertical)
 
         output_train = f(input_train)
         output_val = f(input_val)
         output_test = f(input_test)
 
-        dataset = ((f_func,
+        num_vars = 2 if 'x1' in lisps[f_name] else 1
+        dataset = ((GP.Tree(tree=lisps[f_name], num_vars=num_vars),
                    np.vstack([output_train, input_train]).T,
                    np.vstack([output_val, input_val]).T,
                    np.vstack([output_test, input_test]).T),)
@@ -1017,39 +1266,48 @@ def get_benchmark_datasets(rng, max_adjustment, shift, scale, horizontal, vertic
 
 def get_function(rng, f_str, max_adjustment, shift, scale, horizontal, vertical):
 
+    offset_amounts = {}
+
     if shift:
 
         if vertical:
 
-            shift_amount = rng.uniform(0, max_adjustment['vshift'])
+            shift_amount = 0
 
-            updated_f_str = f_str + '+' +str(shift_amount)
+            shift_amount = rng.uniform(0, max_adjustment['vshift'])
+            offset_amounts['vshift'] = shift_amount
+
+            f_str = f_str + '+' +str(shift_amount)
 
         if horizontal:
 
             shift_amount = rng.uniform(0, max_adjustment['hshift'])
 
-            updated_f_str = f_str.replace('x[0]', 'np.add(x[0],'+str(shift_amount)+')')
+            offset_amounts['hshift'] = shift_amount
+
+            f_str = f_str.replace('x[0]', 'np.add(x[0],'+str(shift_amount)+')')
 
     if scale:
 
         if vertical:
 
             scale_amount = rng.uniform(0, max_adjustment['vscale'])
+            offset_amounts['vscale'] = scale_amount
 
-            updated_f_str = 'np.multiply('+f_str+','+str(scale_amount)+')'
+            f_str = 'np.multiply('+f_str+','+str(scale_amount)+')'
 
         if horizontal:
 
             scale_amount = rng.uniform(0, max_adjustment['hscale'])
+            offset_amounts['hscale'] = scale_amount
 
-            updated_f_str = f_str.replace('x[0]', 'np.multiply(x[0],'+str(scale_amount)+')')
+            f_str = f_str.replace('x[0]', 'np.multiply(x[0],'+str(scale_amount)+')')
 
-    lambda_string = 'lambda x: '+updated_f_str
+    lambda_string = 'lambda x: '+f_str
 
     f = eval(lambda_string)
 
-    return f
+    return f, offset_amounts
 
 
 def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_target,
@@ -1078,7 +1336,7 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
         List of tuple containnig (base_function, dataset).
     """
 
-    primitives = ['*', '+', '%', '-', 'sin', 'cos']
+    primitives = ['*', '+', '-', 'sin', ]
     terminals = ['#x', '#f']
 
     # Pick the number of input variables
@@ -1088,14 +1346,25 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
     number_of_operations = 0
 
     targets = []
+    trees = ['(- (* (* (x0) (x0)) (x0)) (x0))',
+             '(* (x0) (x0))',
+             '(sin (x0))',
+             '(* (sin (x0)) (cos (x0)))',
+             '(+ (x0) (3))',
+             '(* (x0) (sin (x0)))']
+    datasets = []
+    j = 0
 
-    for _ in range(num_targets):
+    while len(datasets) < num_targets:
+
+        tree = trees[j]
+        j += 1
 
         t = GP.Individual(rng=rng, primitive_set=primitives, terminal_set=terminals, num_vars=num_vars,
-                          depth=depth, method='grow')
+                          tree=tree)#, depth=depth, method='grow')
 
         f = eval('lambda x: ' + t.convert_lisp_to_standard_for_function_creation())
-        outputs = f(np.array([np.linspace(-10, 10, 1000)]).T)
+        outputs = f(np.array([np.linspace(-1, 1, 1000)]))
 
         while 'x0' not in t.get_lisp_string() or len(np.unique(np.around(outputs,7))) == 1 or np.any([t.get_lisp_string() == ind.get_lisp_string() for ind in targets]) or t.get_lisp_string() == '(x0)':
 
@@ -1103,7 +1372,7 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
                               depth=depth, method='grow')
 
             f = eval('lambda x: ' + t.convert_lisp_to_standard_for_function_creation())
-            outputs = f(np.array([np.linspace(-10, 10, 1000)]))
+            outputs = f(np.array([np.linspace(-1, 1, 1000)]))
 
         targets.append(t)
 
@@ -1116,40 +1385,57 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
         if horizontal:
             number_of_operations += t.get_lisp_string(actual_lisp=True).count('x0')
 
-    datasets = []
+        if fixed_adjustments:
+            rand_offset = rng.randint
 
-    if fixed_adjustments:
-        rand_offset = rng.randint
+        else:
+            rand_offset = rng.uniform
 
-    else:
-        rand_offset = rng.uniform
-
-    for i, t in enumerate(targets):
+    # for i, t in enumerate(targets):
 
         base_function_string = t.convert_lisp_to_standard_for_function_creation()
 
-        function = [get_function(rng=rng, f_str=base_function_string, max_adjustment=max_adjustment,
-                                 shift=shift, scale=scale, horizontal=horizontal, vertical=vertical) for _ in range(num_base_function_per_target)]
+        function, offset_amounts = get_function(rng=rng, f_str=base_function_string, max_adjustment=max_adjustment,
+                                                shift=shift, scale=scale, horizontal=horizontal, vertical=vertical)
 
-        for f in function:
 
-            # Make inputs
-            x = np.array([rng.uniform(-1, 1, size=300) for _ in range(num_vars)]).T
+        # plt.figure()
+        # x = np.linspace(-10, 10, 1000).reshape((1000, 1))
+        # plt.plot(x, function(x.T), 'o', color='C1', label='f(x)')
+        # f = eval('lambda x: '+base_function_string)
+        # plt.plot(x, f(x.T), 'o', color='C2', label='y')
+        # plt.plot(x, function(x.T)-f(x.T), 'o', color='C3', label='error')
+        # plt.legend()
+        # plt.show()
+        # for f in function:
 
-            training_indices = rng.choice(300, size=100, replace=False)
-            remaining_indices = [i for i in range(300) if i not in training_indices]
-            validation_indices = rng.choice(remaining_indices, size=100, replace=False)
-            testing_indices = np.array([i for i in range(300) if i not in training_indices and i not in validation_indices])
+        # print(base_function_string)
 
-            x_training = x[training_indices]
-            x_validation = x[validation_indices]
-            x_testing = x[testing_indices]
+        # Make inputs
+        x = np.array([rng.uniform(-1, 1, size=60) for _ in range(num_vars)]).T
 
-            training_dataset = np.hstack((np.array([f(x_training.T)]).T, x_training))
-            validation_dataset = np.hstack((np.array([f(x_validation.T)]).T, x_validation))
-            testing_dataset = np.hstack((np.array([f(x_testing.T)]).T, x_testing))
+        training_indices = rng.choice(60, size=20, replace=False)
+        remaining_indices = [i for i in range(60) if i not in training_indices]
+        validation_indices = rng.choice(remaining_indices, size=20, replace=False)
+        testing_indices = np.array([i for i in range(60) if i not in training_indices and i not in validation_indices])
 
-            datasets.append((base_function_string, training_dataset, validation_dataset, testing_dataset))
+        x_training = x[training_indices]
+        x_validation = x[validation_indices]
+        x_testing = x[testing_indices]
+
+        training_dataset = np.hstack((np.array([function(x_training.T)]).T, x_training))
+        validation_dataset = np.hstack((np.array([function(x_validation.T)]).T, x_validation))
+        testing_dataset = np.hstack((np.array([function(x_testing.T)]).T, x_testing))
+
+        target = eval('lambda x: ' + base_function_string)
+        # print(training_dataset[:, 0])
+        # print(target(training_dataset[:, 1:].T))
+        # exit()
+        if np.all(training_dataset[:, 0] - target(training_dataset[:, 1:].T) == 0):
+            print('continuing', len(datasets))
+            continue
+
+        datasets.append((GP.Tree(tree), training_dataset, validation_dataset, testing_dataset, offset_amounts))
 
     return number_of_operations, datasets
 
@@ -1191,12 +1477,12 @@ if __name__ == '__main__':
 
     assert (args.shift or args.scale) and (args.horizontal or args.vertical), '--vertical or --horizontal must be used with --shift or --scale'
 
-    max_compute_training = 10**10
+    max_compute_training = 5*10**10
     max_compute_testing = 10**10
 
-    num_adjustments = 50
+    num_adjustments = 10
 
-    max_adjustment = {'hshift': sum([1-k/num_adjustments for k in range(num_adjustments)]),
+    max_adjustment = {'hshift': 5,  #sum([1-k/num_adjustments for k in range(num_adjustments)]),
                       'vshift': 5,
                       'hscale': 5,
                       'vscale': 5}
@@ -1248,12 +1534,16 @@ if __name__ == '__main__':
 
         path = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(args.exp))
 
-        if args.debug_mode:
-            timeout = args.timeout
-            cycles_per_second = 1.6*10**9
+        # if args.debug_mode:
+        timeout = args.timeout
+        cycles_per_second = 1.6*10**9
     
-        else:
-            timeout, cycles_per_second = get_computation_time(args.timeout, return_cycles_per_second=True)
+        # else:
+        #     timeout, cycles_per_second = get_computation_time(args.timeout, return_cycles_per_second=True)
+
+        # the population from the previous run of
+        # genetic programming
+        prev_pop = None
 
         for index in jumbled_target_name_indices:
 
@@ -1294,44 +1584,53 @@ if __name__ == '__main__':
                                            # parameters below
                                            **params)
 
+            if prev_pop is not None:
+                gp.pop = prev_pop
+
+            print('before errors', [p.fitness[0] for p in gp.pop])
+
             info = gp.run(rep=args.rep,
                           output_path=output_path,
                           output_file=output_file)
 
-        # dataset is the training dataset and validation dataset
-        dataset = [benchamrk_datasets[test_function][0][1], benchamrk_datasets[test_function][0][2]]
-        test_data = benchamrk_datasets[test_function][0][3]
+            print('after errors', [p.fitness[0] for p in gp.pop])
 
-        # get output_path, put target function being trained and
-        # put the function that is to be the test.
-        output_path = os.path.join(path, 'gp', target_names[args.benchmark_index], function)
-        output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
+            prev_pop = gp.pop
 
-        num_vars = 2 if 'x1' in lisps[test_function] else 1
+        # # dataset is the training dataset and validation dataset
+        # dataset = [benchamrk_datasets[test_function][0][1], benchamrk_datasets[test_function][0][2]]
+        # test_data = benchamrk_datasets[test_function][0][3]
 
-        params = {'T': timeout,
-                  'cycles_per_second': cycles_per_second,
-                  'given_individual': lisps[test_function],
-                  'max_compute': max_compute_testing}
+        # # get output_path, put target function being trained and
+        # # put the function that is to be the test.
+        # output_path = os.path.join(path, 'gp', target_names[args.benchmark_index], function)
+        # output_file = 'fitness_data_rep' + str(args.rep) + '.csv'
 
-        gp = GP.GeneticProgrammingAfpo(rng=rng,
-                                       pop_size=100,
-                                       max_gens=60000,
-                                       primitive_set=primitive_set,
-                                       terminal_set=terminal_set,
-                                       # this is not data, which is passed
-                                       data=dataset,
-                                       test_data=test_data,
-                                       prob_mutate=1,
-                                       prob_xover=0,
-                                       num_vars=num_vars,
-                                       mutation_param=2,
-                                       # parameters below
-                                       **params)
+        # num_vars = 2 if 'x1' in lisps[test_function] else 1
 
-        info = gp.run(rep=args.rep,
-                      output_path=output_path,
-                      output_file=output_file)
+        # params = {'T': timeout,
+        #           'cycles_per_second': cycles_per_second,
+        #           'given_individual': lisps[test_function],
+        #           'max_compute': max_compute_testing}
+
+        # gp = GP.GeneticProgrammingAfpo(rng=rng,
+        #                                pop_size=100,
+        #                                max_gens=60000,
+        #                                primitive_set=primitive_set,
+        #                                terminal_set=terminal_set,
+        #                                # this is not data, which is passed
+        #                                data=dataset,
+        #                                test_data=test_data,
+        #                                prob_mutate=1,
+        #                                prob_xover=0,
+        #                                num_vars=num_vars,
+        #                                mutation_param=2,
+        #                                # parameters below
+        #                                **params)
+
+        # info = gp.run(rep=args.rep,
+        #               output_path=output_path,
+        #               output_file=output_file)
 
     else:
         print('equation adjuster')
