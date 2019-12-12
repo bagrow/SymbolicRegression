@@ -13,13 +13,14 @@ from keras import backend as K
 
 class SymbolicRegressionGame(gym.Env):
 
-    def __init__(self, rng, x, y, f, time_limit, tree=None, f_val=None, x_val=None, f_test=None, x_test=None,
-                 target=None, model=None):
+    def __init__(self, rng, x, y, f, time_limit, tree=None, f_val=None, x_val=None, f_test=None, x_test=None, y_test=None,
+                 target=None, model=None, extra_constant=False):
 
         super(SymbolicRegressionGame, self).__init__()
         
         self.rng = rng
         self.model = model
+        self.extra_constant = extra_constant
 
         # initial shift amount
         self.v_original = 0
@@ -35,6 +36,7 @@ class SymbolicRegressionGame(gym.Env):
         if x_test is not None:
             self.x_test = x_test
             self.f_test = f_test
+            self.y_test = y_test
 
         self.time_limit = time_limit
         
@@ -65,7 +67,7 @@ class SymbolicRegressionGame(gym.Env):
         self.test_errors = []
 
     
-    def reset(self, v=None, datatype='train'):
+    def reset(self, v=None, s=None, datatype='train'):
 
         # hidden_states = K.variable(value=np.zeros((3, 1)))
         # cell_states = K.variable(value=np.zeros((3, 1)))
@@ -76,17 +78,30 @@ class SymbolicRegressionGame(gym.Env):
 
         if v is None:
             self.v_original = self.rng.uniform(-5, 5)
-    
 
+        if s is None:
+            self.s_original = self.rng.uniform(-5, 5)
+    
+        self.s = 1
         self.v = 0
 
-        self.y = self.f(self.x, self.v_original)
+        if self.extra_constant:
+            self.y = self.f(self.x, self.v_original, self.s_original)
 
-        if hasattr(self, 'f_val'):
-            self.y_val = self.f_val(self.x_val, self.v_original)
-    
-        if hasattr(self, 'f_test'):
-            self.y_test = self.f_test(self.x_test, self.v_original)
+            if hasattr(self, 'f_val'):
+                self.y_val = self.f_val(self.x_val, self.v_original, self.s_original)
+        
+            # if hasattr(self, 'f_test'):
+            #     self.y_test = self.f_test(self.x_test, self.v_original, self.s_original)
+
+        else:
+            self.y = self.f(self.x, self.v_original)
+
+            if hasattr(self, 'f_val'):
+                self.y_val = self.f_val(self.x_val, self.v_original)
+        
+            # if hasattr(self, 'f_test'):
+            #     self.y_test = self.f_test(self.x_test, self.v_original)
 
         self.timestep = 0
 
@@ -95,7 +110,12 @@ class SymbolicRegressionGame(gym.Env):
 
     def _step(self, action, datatype='train'):
 
-        v_change = action
+        if self.extra_constant:
+            v_change, s_change = action[0]
+            self.update_s(s_change)
+
+        else:
+            v_change = action
 
         while type(v_change) not in (np.float32, np.float64, float):
             v_change = v_change[0]
@@ -133,9 +153,15 @@ class SymbolicRegressionGame(gym.Env):
         self.timestep += 1
 
 
-    def get_signed_error(self):
+    def update_s(self, change_in_s):
 
-        return np.mean(self.y - self.f(self.x, self.v))
+        self.FLoPs += 1
+        self.s += change_in_s
+
+
+    # def get_signed_error(self):
+
+    #     return np.mean(self.y - self.f(self.x, self.v))
 
 
     def get_error(self, datatype):
@@ -143,10 +169,18 @@ class SymbolicRegressionGame(gym.Env):
         self.FLoPs += (3+self.get_FLoPs_tree())*len(self.x)
 
         if datatype == 'train':
-            return np.sqrt(np.mean(np.power(self.y - self.f(self.x, self.v), 2)))
+            if self.extra_constant:
+                return np.sqrt(np.mean(np.power(self.y - self.f(self.x, self.v, self.s), 2)))
+
+            else:
+                return np.sqrt(np.mean(np.power(self.y - self.f(self.x, self.v), 2)))
 
         elif datatype == 'test':
-            return np.sqrt(np.mean(np.power(self.y_test - self.f_test(self.x_test, self.v), 2)))
+            if self.extra_constant:
+                return np.sqrt(np.mean(np.power(self.y_test - self.f_test(self.x_test, self.v, self.s), 2)))
+
+            else:
+                return np.sqrt(np.mean(np.power(self.y_test - self.f_test(self.x_test, self.v), 2)))
 
     def get_reward(self, datatype):
 
@@ -161,17 +195,28 @@ class SymbolicRegressionGame(gym.Env):
 
         if datatype == 'train':
             # return np.array(list(itertools.chain(*[[*xi, yi - self.f(xi, self.v)] for xi, yi in zip(self.x.T, self.y)])))
-            return np.array([[*xi, yi - self.f(xi, self.v)] for xi, yi in zip(self.x.T, self.y)])
+            if self.extra_constant:
+                return np.array([[*xi, yi - self.f(xi, self.v, self.s)] for xi, yi in zip(self.x.T, self.y)])
+
+            else:
+                return np.array([[*xi, yi - self.f(xi, self.v)] for xi, yi in zip(self.x.T, self.y)])
 
 
         elif datatype == 'validation':
             # return np.array(list(itertools.chain(*[[*xi, yi - self.f_val(xi, self.v)] for xi, yi in zip(self.x_val.T, self.y_val)])))
-            return np.array([[*xi, yi - self.f_val(xi, self.v)] for xi, yi in zip(self.x_val.T, self.y_val)])
+            if self.extra_constant:
+                return np.array([[*xi, yi - self.f_val(xi, self.v, self.s)] for xi, yi in zip(self.x_val.T, self.y_val)])
 
+            else:
+                return np.array([[*xi, yi - self.f_val(xi, self.v)] for xi, yi in zip(self.x_val.T, self.y_val)])
 
         elif datatype == 'test':
             # return np.array(list(itertools.chain(*[[*xi, yi - self.f_test(xi, self.v)] for xi, yi in zip(self.x_test.T, self.y_test)])))
-            return np.array([[*xi, yi - self.f_test(xi, self.v)] for xi, yi in zip(self.x_test.T, self.y_test)])
+            if self.extra_constant:
+                return np.array([[*xi, yi - self.f_test(xi, self.v, self.s)] for xi, yi in zip(self.x_test.T, self.y_test)])
+
+            else:
+                return np.array([[*xi, yi - self.f_test(xi, self.v)] for xi, yi in zip(self.x_test.T, self.y_test)])
 
 
     def get_state(self, datatype):
@@ -250,22 +295,24 @@ class SymbolicRegressionGame(gym.Env):
 
             if len(layer_weights) == 3:
 
-                start = np.prod(weight_shapes[-1])
-
                 weight_shapes.extend([layer_weights[0].shape, layer_weights[1].shape])
 
+                start = np.prod(weight_shapes[-3])
                 end1 = start + np.prod(weight_shapes[-2])
                 end2 = end1 + np.prod(weight_shapes[-1])
 
-                new_weights = np.array([weights[start:end1][None,:].T, weights[end1:end2][None,:], np.zeros(end2-end1)])
+                new_weights = np.array([weights[start:end1].reshape(weight_shapes[-2]),
+                                        weights[end1:end2].reshape(weight_shapes[-1]),
+                                        np.zeros(weight_shapes[-1][0])])
                 layer.set_weights(new_weights)
 
 
-    def play_game(self, weights, v, datatype='train'):
+    def play_game(self, weights, v, s, datatype='train', final_error_only=False):
 
-        self.set_weights(weights)
+        if weights is not None:
+            self.set_weights(weights)
 
-        state = self.reset(v, datatype)
+        state = self.reset(v, s, datatype)
 
         state = self.get_state(datatype)
 
@@ -277,8 +324,13 @@ class SymbolicRegressionGame(gym.Env):
             action = self.get_next_action(datatype)
             state, reward, done, _ = self._step(action, datatype)
             neg_reward_sum += -reward
+            print('action', action)
 
-        return neg_reward_sum
+        if final_error_only:
+            return -reward
+
+        else:
+            return neg_reward_sum
 
 
 if __name__ == '__main__':

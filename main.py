@@ -10,8 +10,7 @@ import cma
 from keras.optimizers import Adam
 from keras.models import Model, Sequential
 from keras.layers.core import Dense
-from keras.layers import Input, SimpleRNN, Reshape, LSTM
-from keras.initializers import Zeros
+from keras.layers import Input, SimpleRNN
 
 import argparse
 import os
@@ -19,8 +18,35 @@ import time
 import itertools
 
 
-def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale, horizontal, vertical, debug_mode, benchamrk_datasets, dataset_name,
-                             num_adjustments, max_adjustment):
+def train_equation_engineer(rep, exp, timeout, fixed_adjustments, shift, scale, horizontal, vertical,
+                            benchamrk_datasets, dataset_name, max_adjustment):
+    """Train equation engineer (EE)
+
+    Parameters
+    ----------
+    rep : int
+        Repetition number. Partially determines the seed. Also effects output filenames.
+    exp : int
+        Experiment number. Partitally determines the seed. Also effects saved file locations.
+    timeout : int
+        Max ammount of time allowed for training.
+    fixed_adjustemnts : bool
+        If true the constants specified to shift/scale are not changed.
+    shift : bool
+        If true, the target function is a shift of base function.
+    scale : bool
+        If true, the target function is a scale of the base function.
+    horizontal : bool
+        If true, the scale/shift is done horizontally.
+    vertical : bool
+        If true, the scale/shift is done vertically.
+    benchmark_datasets : dict
+        The datasets are the value and the keys are the names of the benchmark functions.
+    dataset_name : str
+        The name of the benchmark function that will be used for testing
+    max_adjustment : dict
+        The maximum allowed shift/scale.
+    """
 
     # define parameters
     num_targets = 5
@@ -47,7 +73,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
     # hidden_weights = rng.uniform(-1, 1, size=(len(hidden_values), len(hidden_values)))
 
     num_input = 3
-    num_output = 1
+    num_output = 2 if args.extra_constant else 1
 
     model = Sequential()
     model.add(SimpleRNN(num_output, batch_input_shape=(1, 20, num_input),
@@ -71,7 +97,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
     global best
 
     # best = (error, weights)
-    best = (float('inf'), None)
+    best = (float('inf'), None, None)
 
     # weights = rng.uniform(-1, 1, size=num_weights)
 
@@ -105,8 +131,7 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
 
     save_loc = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp))
 
-    if not os.path.exists(save_loc):
-        os.makedirs(save_loc)
+    os.makedirs(save_loc, exist_ok=True)
 
     # Make a file for parameter summary
     summary_data = [('experiment', exp),
@@ -117,15 +142,13 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
                     ('max depth', depth),
                     ('sigma (CMA-ES)', sigma),
                     ('max number of function evaluations', function_evals),
-                    ('debug mode', debug_mode),
                     ('horizontal', horizontal),
                     ('max shift', max_adjustment),
                     ('timeout', timeout),
                     ('fixed adjustment', fixed_adjustments),
                     ('activation', activation.__name__),
                     ('initial adjustment', initial_adjustment),
-                    ('initial parameter', initial_parameter),
-                    ('number of adjustments', num_adjustments)]
+                    ('initial parameter', initial_parameter)]
 
     df = pd.DataFrame(summary_data, columns=['Parameters', 'Values'])
     df.to_csv(os.path.join(save_loc, 'summary_exp'+str(exp)+'_'+dataset_name+'.csv'))
@@ -137,8 +160,8 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
 
     cmaes_options = {'maxfevals': function_evals,
                      'ftarget': 1e-30,
-                     'tolfun': 0,
-                     'tolfunhist': 0,
+                     # 'tolfun': 0,   # toleration in function value
+                     # 'tolfunhist': 0, # tolerance in function value history
                      'popsize': 100,
                      'seed': seed,
                      'verb_log': 0,
@@ -164,25 +187,49 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
     print(target_names)
     print(jumbled_target_name)
 
-    tree_test = GP.Tree(rng=None, tree='(+ '+lisps[jumbled_target_name[-1]]+' (0))', num_vars=2)
-    f_test = eval('lambda x, v: '+tree_test.convert_lisp_to_standard_for_function_creation()+'+v')
+    if args.extra_constant:
+
+        tree_string = '(+ (* (1) '+lisps[jumbled_target_name[0]]+') (0))'
+        tree = GP.Tree(rng=None, tree=tree_string, num_vars=2)
+        f_string = 'lambda x, v, s: s*('+tree.convert_lisp_to_standard_for_function_creation()+')+v'
+
+        tree_test_string = '(+ (* (1) '+lisps[jumbled_target_name[-1]]+') (0))'
+        tree_test = GP.Tree(rng=None, tree=tree_test_string, num_vars=2)
+        f_test_string = 'lambda x, v, s: s*('+tree_test.convert_lisp_to_standard_for_function_creation()+')+v'
+
+    else:
+
+        tree_string = '(+ '+lisps[jumbled_target_name[0]]+' (0))'
+        tree = GP.Tree(rng=None, tree=tree_string, num_vars=2)
+        f_string = 'lambda x, v: '+tree.convert_lisp_to_standard_for_function_creation()+'+v'
+
+        tree_test_string = '(+ '+lisps[jumbled_target_name[-1]]+' (0))'
+        tree_test = GP.Tree(rng=None, tree=tree_test_string, num_vars=2)
+        f_test_string = 'lambda x, v: '+tree_test.convert_lisp_to_standard_for_function_creation()+'+v'
+
+    f_test = eval(f_test_string)
     x_test = np.vstack((np.linspace(-1, 1, 20), np.linspace(-1, 1, 20)))
 
+    if args.extra_constant:
+        y_test = f_test(x_test, 5, 0.5)
+
+    else:
+        y_test = f_test(x_test, 5)
+
     # get the tree, +0 for the v
-    tree = GP.Tree(rng=None, tree='(+ '+lisps[jumbled_target_name[0]]+' (0))', num_vars=2)
-    f = eval('lambda x, v: '+tree.convert_lisp_to_standard_for_function_creation()+'+v')
+    f = eval(f_string)
     x = np.vstack((np.linspace(-1, 1, 20), np.linspace(-1, 1, 20)))
 
     rng = np.random.RandomState(seed)
     v = rng.uniform(-5, 5)
-    y = f(x, v)
 
     time_limit = 10
 
-    EE = SymbolicRegressionGame(rng=rng, x=x, y=y, f=f, time_limit=time_limit, tree=tree,
+    EE = SymbolicRegressionGame(rng=rng, x=x, y=None, f=f, time_limit=time_limit, tree=tree,
                                 # f_val=f_val, x_val=x_val,
-                                f_test=f_test, x_test=x_test,
-                                target=jumbled_target_name[-1], model=model)
+                                f_test=f_test, x_test=x_test, y_test=y_test,
+                                target=jumbled_target_name[-1], model=model,
+                                extra_constant=args.extra_constant)
 
     best_individual_data = [['Generation', 'Sum Train Error Sum','Test Error Sum', 'Number of Floating Point Operations']]
     gen = 0
@@ -207,62 +254,70 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
     # eq: 5, 9, y, 24, 30, c_1, c_mu, 31, 37
     cma_ops_per_gen = (2*n) + 2*(mu-1)*n + (n+1) + (2*n+7) + (2+4*mu+4*n**2+n) + (2) + (3) + (6 + 5*n**2) + (2*n+5)
 
-    # while max_FLoPs >= EE.FLoPs:
+    while max_FLoPs >= EE.FLoPs:
 
-        # pop_data_summary = []
+        pop_data_summary = []
 
-    while not es.stop():
+        while not es.stop():
 
-        v = rng.uniform(-5, 5)
+            v = rng.uniform(-5, 5)
+            s = rng.uniform(-5, 5)
 
-        solutions = es.ask()
-        evaluate_pop = [EE.play_game(weights=w, v=v) for w in solutions]
+            solutions = es.ask()
+            evaluate_pop = [EE.play_game(weights=w, v=v, s=s) for w in solutions]
 
-        es.tell(solutions, evaluate_pop)
-        es.disp()
+            es.tell(solutions, evaluate_pop)
+            es.disp()
 
-        best_index = np.argmin(evaluate_pop)
+            best_index = np.argmin(evaluate_pop)
 
-        if evaluate_pop[best_index] < best[0]:
-            best = (evaluate_pop[best_index], solutions[best_index])
-            print('new best', best[0])
+            if evaluate_pop[best_index] < best[0]:
+                EE.set_weights(solutions[best_index])
+                best = (evaluate_pop[best_index], solutions[best_index], EE.model)
+                print('new best', best[0])
 
-        gen += 1
+            gen += 1
 
-        # update number of operations
-        EE.FLoPs += cma_ops_per_gen
+            # update number of operations
+            EE.FLoPs += cma_ops_per_gen
 
-        # save best individuals during training
-        test_error = EE.play_game(weights=best[1], v=v, datatype='test')
-        best_individual_data.append([gen,
-                                     best[0],
-                                     test_error,
-                                     EE.FLoPs])
+            # save best individuals during training
+            test_error = EE.play_game(weights=best[1], v=v, s=s, datatype='test', final_error_only=True)
+            best_individual_data.append([gen,
+                                         best[0],
+                                         test_error,
+                                         EE.FLoPs])
 
-        print('total compute', EE.FLoPs)
+            print('total compute', EE.FLoPs)
 
-        # check if max number of computations have occured
-        if max_FLoPs < EE.FLoPs:
-            break
+            # check if max number of computations have occured
+            if max_FLoPs < EE.FLoPs:
+                break
 
-        if EE.FLoPs - FLoPs_checkpoint > max_FLoPs/(len(target_names)-1):
+            if EE.FLoPs - FLoPs_checkpoint > max_FLoPs/(len(target_names)-1):
 
-            # update training data but not testing data
-            tree = GP.Tree(rng=None, tree='(+ '+lisps[jumbled_target_name[target_index]]+' (0))', num_vars=2)
-            f = eval('lambda x, v: '+tree.convert_lisp_to_standard_for_function_creation()+'+v')
-            EE.tree = tree
-            EE.f = f
-            
-            FLoPs_checkpoint += max_FLoPs/(len(target_names)-1)
-            print('checkpoint', jumbled_target_name[target_index])
-            target_index += 1
+                # update training data but not testing data
+                tree = GP.Tree(rng=None, tree='(+ '+lisps[jumbled_target_name[target_index]]+' (0))', num_vars=2)
 
-        # es.result_pretty()
+                if EE.extra_constant:
+                    f = eval('lambda x, v, s: s*('+tree.convert_lisp_to_standard_for_function_creation()+')+v')
 
-        # # restart cma-es with different seed
-        # weights = rng.uniform(-1, 1, size=num_weights)
-        # cmaes_options['seed'] += 10000
-        # es = cma.CMAEvolutionStrategy(weights, sigma, cmaes_options)
+                else:
+                    f = eval('lambda x, v: '+tree.convert_lisp_to_standard_for_function_creation()+'+v')
+
+                EE.tree = tree
+                EE.f = f
+                
+                FLoPs_checkpoint += max_FLoPs/(len(target_names)-1)
+                print('checkpoint', jumbled_target_name[target_index])
+                target_index += 1
+
+        es.result_pretty()
+
+        # restart cma-es with different seed
+        weights = rng.uniform(-1, 1, size=num_weights)
+        cmaes_options['seed'] += 10000
+        es = cma.CMAEvolutionStrategy(weights, sigma, cmaes_options)
 
     df = pd.DataFrame(best_individual_data[1:], columns=best_individual_data[0])
     df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(rep)+'_'+dataset_name+'.csv'), index=False)
@@ -270,18 +325,20 @@ def train_equation_corrector(rep, exp, timeout, fixed_adjustments, shift, scale,
     df = pd.DataFrame(pop_data_summary, columns=['Generation', 'Mean Training Error', 'Mean Validation Error'])
     df.to_csv(os.path.join(save_loc, 'pop_data_summary_rep'+str(rep)+'_'+dataset_name+'.csv'), index=False)
 
-    xopt = best[1]
+    # xopt = best[1]
     
-    errors = EE.play_game(weights=xopt, v=5)
+    # errors = EE.play_game(weights=xopt, v=rng.uniform(-5,5), s=rng.uniform(-5,5))
 
     # save the best individual
-    data = [list(xopt)]
-    df = pd.DataFrame(data).transpose()
-    df.to_csv(os.path.join(save_loc, 'best_ind_weights_rep'+str(rep)+'_'+dataset_name+'.csv'),
-              header=['trained weights'])
+    # data = [list(xopt)]
+    # df = pd.DataFrame(data).transpose()
+    # df.to_csv(os.path.join(save_loc, 'best_ind_weights_rep'+str(rep)+'_'+dataset_name+'.csv'),
+    #           header=['trained weights'])
+
+    best[2].save(os.path.join(save_loc, 'best_ind_model_rep'+str(rep)+'_'+dataset_name+'.csv'))
 
 
-def get_benchmark_datasets(rng, max_adjustment, shift, scale, horizontal, vertical):
+def get_benchmark_datasets(rng, max_adjustment, shift, scale, horizontal, vertical, jumbled_target_name):
 
     target_strings = {'quartic': 'x[0] * (1 + x[0] * (1 + x[0] * (1 + x[0])))',
                       'septic': 'x[0] * (1 - x[0] * (2 - x[0] * (1 - x[0] * (1 - x[0] * (1 - x[0] * (2 - x[0]))))))',
@@ -326,8 +383,10 @@ def get_benchmark_datasets(rng, max_adjustment, shift, scale, horizontal, vertic
 
         input_test = np.vstack((x0_test, x1_test))
 
+        testing = f_name == jumbled_target_name[-1]
+
         f, _ = get_function(rng=rng, f_str=f_func, max_adjustment=max_adjustment,
-                         shift=shift, scale=scale, horizontal=horizontal, vertical=vertical)
+                         shift=shift, scale=scale, horizontal=horizontal, vertical=vertical, testing=testing)
 
         output_train = f(input_train)
         output_val = f(input_val)
@@ -344,7 +403,7 @@ def get_benchmark_datasets(rng, max_adjustment, shift, scale, horizontal, vertic
     return benchamrk_datasets
 
 
-def get_function(rng, f_str, max_adjustment, shift, scale, horizontal, vertical):
+def get_function(rng, f_str, max_adjustment, shift, scale, horizontal, vertical, testing):
 
     offset_amounts = {}
 
@@ -354,7 +413,7 @@ def get_function(rng, f_str, max_adjustment, shift, scale, horizontal, vertical)
 
             shift_amount = 0
 
-            shift_amount = rng.uniform(0, max_adjustment['vshift'])
+            shift_amount = rng.uniform(0, max_adjustment['vshift']) if testing is False else 5
             offset_amounts['vshift'] = shift_amount
 
             f_str = f_str + '+' +str(shift_amount)
@@ -474,7 +533,8 @@ def get_data_for_equation_corrector(rng, num_targets, num_base_function_per_targ
         base_function_string = t.convert_lisp_to_standard_for_function_creation()
 
         function, offset_amounts = get_function(rng=rng, f_str=base_function_string, max_adjustment=max_adjustment,
-                                                shift=shift, scale=scale, horizontal=horizontal, vertical=vertical)
+                                                shift=shift, scale=scale, horizontal=horizontal, vertical=vertical,
+                                                testing=False)  # doesn't matter here just getting tree sizes
 
         # Make inputs
         x = np.array([rng.uniform(-1, 1, size=60) for _ in range(num_vars)]).T
@@ -514,9 +574,6 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--timeout', help='The number of seconds use for training based on clock speed.',
                         type=float, action='store', default=float('inf'))
 
-    parser.add_argument('-d', '--debug_mode', help='Do not adjust timeout',
-                        action='store_true')
-
     parser.add_argument('-gp', '--genetic_programming', help='Compare with GP',
                         action='store_true')
 
@@ -535,6 +592,9 @@ if __name__ == '__main__':
     parser.add_argument('--scale', help='Stuff=scale',
                         action='store_true')
 
+    parser.add_argument('--extra_constant',
+                        action='store_true')
+
     args = parser.parse_args()
     print(args)
 
@@ -542,9 +602,7 @@ if __name__ == '__main__':
 
     max_FLoPs = 10**7
 
-    num_adjustments = 10
-
-    max_adjustment = {'hshift': 5,  #sum([1-k/num_adjustments for k in range(num_adjustments)]),
+    max_adjustment = {'hshift': 5,
                       'vshift': 5,
                       'hscale': 5,
                       'vscale': 5}
@@ -564,17 +622,17 @@ if __name__ == '__main__':
              'keijzer14': '(% (8) (+ (2) (+ (* (x0) (x0)) (* (x1) (x1)))))',
              'keijzer15': '(+ (* (x0) (- (* (0.2) (* (x0) (x0))) (1))) (* (x1) (- (* (0.5) (* (x1) (x1))) (1))))'}
 
+    jumbled_target_name_indices = [(args.benchmark_index+i+1) % len(target_names)  for i, _ in enumerate(target_names)] 
+    jumbled_target_name = [target_names[i] for i in jumbled_target_name_indices]
+    target_name = target_names[args.benchmark_index]
 
     benchamrk_datasets = get_benchmark_datasets(rng=np.random.RandomState(args.rep+100*args.exp),
                                                 max_adjustment=max_adjustment,
                                                 shift=args.shift,
                                                 scale=args.scale,
                                                 horizontal=args.horizontal,
-                                                vertical=args.vertical)
-
-    jumbled_target_name_indices = [(args.benchmark_index+i+1) % len(target_names)  for i, _ in enumerate(target_names)] 
-    jumbled_target_name = [target_names[i] for i in jumbled_target_name_indices]
-    target_name = target_names[args.benchmark_index]
+                                                vertical=args.vertical,
+                                                jumbled_target_name=jumbled_target_name)
 
     if args.genetic_programming:
 
@@ -596,7 +654,6 @@ if __name__ == '__main__':
 
         path = os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(args.exp))
 
-        # if args.debug_mode:
         timeout = args.timeout
 
         # the population from the previous run of
@@ -623,7 +680,6 @@ if __name__ == '__main__':
             num_vars = 2 if 'x1' in lisps[function] else 1
 
             params = {'T': timeout,
-                      'cycles_per_second': cycles_per_second,
                       'given_individual': lisps[function],
                       'max_compute': max_FLoPs/(len(benchamrk_datasets)-1)}
 
@@ -645,13 +701,13 @@ if __name__ == '__main__':
             if prev_pop is not None:
                 gp.pop = prev_pop
 
-            print('before errors', [p.fitness[0] for p in gp.pop])
+            # print('before errors', [p.fitness[0] for p in gp.pop])
 
             info = gp.run(rep=args.rep,
                           output_path=output_path,
                           output_file=output_file)
 
-            print('after errors', [p.fitness[0] for p in gp.pop])
+            # print('after errors', [p.fitness[0] for p in gp.pop])
 
             prev_pop = gp.pop
 
@@ -659,10 +715,10 @@ if __name__ == '__main__':
         print('equation adjuster')
         assert args.timeout is not None, 'Specify a time limit with -t or --timeout'
 
-        train_equation_corrector(rep=args.rep, exp=args.exp, timeout=args.timeout,
-                                 fixed_adjustments=False, shift=args.shift,
-                                 scale=args.scale, horizontal=args.horizontal,
-                                 vertical=args.vertical,
-                                 debug_mode=args.debug_mode, benchamrk_datasets=benchamrk_datasets,
-                                 dataset_name=target_name,
-                                 max_adjustment=max_adjustment, num_adjustments=num_adjustments)
+        train_equation_engineer(rep=args.rep, exp=args.exp, timeout=args.timeout,
+                                fixed_adjustments=False, shift=args.shift,
+                                scale=args.scale, horizontal=args.horizontal,
+                                vertical=args.vertical,
+                                benchamrk_datasets=benchamrk_datasets,
+                                dataset_name=target_name,
+                                max_adjustment=max_adjustment)
