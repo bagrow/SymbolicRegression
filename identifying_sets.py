@@ -10,8 +10,8 @@ from sklearn.model_selection import train_test_split
 
 np.random.seed(0)
 
-width = num_data_points = 5
-num_input = 1
+width = num_data_points = 20
+num_input = 2
 overlap = 4
 
 assert overlap < width, 'overlap must be less than width'
@@ -26,7 +26,24 @@ for _ in range(num_sets-1):
     next_start = starts[-1] + width - overlap
     starts.append(next_start)
 
-sets = np.array([list({i for i in range(s, s+width)}) for s in starts])
+# sets of tuples of 2 elements
+x_seq = list(range(width))
+y_seq = list(range(int(width/2), int(width/2)+width))
+
+base_set = [(x,y) for x, y in zip(x_seq, y_seq)]
+switch_set = [(y,x) for x, y in zip(x_seq, y_seq)]
+
+max_x = max(x_seq)
+max_y = max(y_seq)
+offset_both_set = [(x+max_x ,y+max_y) for x, y in zip(x_seq, y_seq)]
+offset_one_set = [(x ,y+max_y) for x, y in zip(x_seq, y_seq)]
+
+np.random.shuffle(y_seq)
+shuffle_set = [(x,y) for x, y in zip(x_seq, y_seq)]
+
+sets = np.array([base_set, shuffle_set, switch_set, offset_one_set, offset_both_set])
+
+# sets = np.array([list({i for i in range(s, s+width)}) for s in starts])
 
 x = [s for s in sets]
 y = [np.eye(len(sets))[i] for i, _ in enumerate(sets)]
@@ -43,7 +60,7 @@ for _ in range(num_copies_of_set):
 
 
 # convert to recurrent input
-x = np.array([[[i] for i in input_sequence] for input_sequence in x])
+x = np.array([[i for i in input_sequence] for input_sequence in x])
 
 # split data
 x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2)
@@ -52,9 +69,9 @@ x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2)
 num_output = len(sets)
 
 model = Sequential()
-model.add(SimpleRNN(10, input_shape=(num_data_points, num_input),
+model.add(SimpleRNN(8, input_shape=(num_data_points, num_input),
                     return_sequences=True, activation='relu'))
-model.add(SimpleRNN(10,
+model.add(SimpleRNN(8,
                     return_sequences=False, activation='relu'))
 model.add(Dense(num_output, activation='softmax'))
 
