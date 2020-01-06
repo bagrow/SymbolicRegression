@@ -1,3 +1,10 @@
+"""Encoding of trees in this algorithm are based on the
+encoding in gene expression programming. The encodings of the
+equations/programs are called k-expressions or karva notation.
+
+https://www.gepsoft.com/gepsoft/APS3KB/Chapter05/Section3/SS1.htm
+"""
+
 from GeneticProgramming.consts import *
 from GeneticProgramming.Individual import Individual
 
@@ -315,6 +322,15 @@ def to_s_expression(T, root, canonical_form=False):
 
 def generate_equation(rng, w, recursive_weights, num_hidden, num_outputs,
                       primitives, terminals, head_size, num_time_steps):
+    """Get sequence from NN that can be converted into a equation.
+
+    Parameters
+    ----------
+
+    Returns
+    -------
+    gene : list of str
+        The output sequence."""
 
     hidden_values = w[:num_hidden]
 
@@ -385,7 +401,7 @@ def generate_equation(rng, w, recursive_weights, num_hidden, num_outputs,
         P = L
         gene[P] = label
         L += 1
-
+    print('gene', gene)
     return gene
 
 
@@ -481,26 +497,47 @@ def run_neuro_encoded_expression_programming(rep, num_hidden, head_size, primiti
 
 if __name__ == '__main__':
 
-    rng = np.random.RandomState(0)
+    if False:
 
-    num_hidden = 40
-    recursive_weights = rng.uniform(-1, 1, size=(num_hidden, num_hidden))
+        # to use nn to output seq and then convert
+        rng = np.random.RandomState(0)
 
-    primitives = ['*', '+', '-', '%']
-    terminals = ['x0', 'x1', '#f']
-    head_size = 30
+        num_hidden = 40
+        recursive_weights = rng.uniform(-1, 1, size=(num_hidden, num_hidden))
 
-    num_outputs = len(primitives) + len(terminals) + 1
+        primitives = ['*', '+', '-', '%']
+        terminals = ['x0', 'x1', '#f']
+        head_size = 30
 
-    if '#f' in terminals:
-        num_outputs += 1
+        num_outputs = len(primitives) + len(terminals) + 1
 
-    w = np.zeros(num_outputs*num_hidden + num_hidden)
-    indices = rng.choice(num_outputs*num_hidden, size=num_outputs*num_hidden//2)
-    values = rng.uniform(-2, 2, size=num_outputs*num_hidden//2)
-    w[indices] = values
+        if '#f' in terminals:
+            num_outputs += 1
 
-    ind = get_individual(rng, w, recursive_weights, num_hidden, num_outputs,
-                         primitives, terminals, head_size, num_time_steps)
+        w = np.zeros(num_outputs*num_hidden + num_hidden)
+        indices = rng.choice(num_outputs*num_hidden, size=num_outputs*num_hidden//2)
+        values = rng.uniform(-2, 2, size=num_outputs*num_hidden//2)
+        w[indices] = values
+        num_time_steps = 2
 
-    print(ind.get_lisp_string())
+        ind = get_individual(rng, w, recursive_weights, num_hidden, num_outputs,
+                             primitives, terminals, head_size, num_time_steps)
+
+        print(ind.get_lisp_string())
+
+    else:
+
+        # to just convert to tree...
+        rng = np.random.RandomState(0)
+
+        primitives = ['*', '+', '-', '%']
+        terminals = ['x0', 'x1', '#f']
+
+        gene = ['*', 'x0', 'x0', '*']
+
+        tree = build_tree(gene)
+
+        ind = Individual(rng, primitives, terminals, num_vars=1,
+                         tree=tree)
+
+        print(ind.get_lisp_string())

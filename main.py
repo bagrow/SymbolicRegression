@@ -48,36 +48,20 @@ def train_equation_engineer(rep, exp, timeout, fixed_adjustments, shift, scale, 
         The maximum allowed shift/scale.
     """
 
-    # define parameters
-    num_targets = 5
-    num_test_targets = 1
-    num_base_function_per_target = 1
-    depth = 6
-
     sigma = 0.5
     function_evals = float('inf')
     seed = 100*args.exp + args.rep + 1
 
-    activation = np.tanh
-    initial_adjustment = 1.
-    initial_parameter = 0.
-
-    # return_all_errors = False
-
-    # get consistent validation set to get best overall EA from experiment
-    # rng = np.random.RandomState(100*exp)
-
-    rng = np.random.RandomState(rep+100*exp)
-
-    # hidden_values = rng.uniform(-1, 1, size=25)
-    # hidden_weights = rng.uniform(-1, 1, size=(len(hidden_values), len(hidden_values)))
+    rng = np.random.RandomState(seed)
+    np.random.seed(seed)
 
     num_input = 3
     num_output = 2 if args.extra_constant else 1
+    num_data_points = 2
 
     model = Sequential()
-    model.add(SimpleRNN(num_output, batch_input_shape=(1, 20, num_input),
-                        return_sequences=False, activation='relu'))
+    model.add(SimpleRNN(num_output, input_shape=(num_data_points, num_input),
+                        return_sequences=False, activation='tanh'))
 
     model.compile(loss='mean_absolute_error', optimizer='adam', metrics=['accuracy'])
 
@@ -87,7 +71,7 @@ def train_equation_engineer(rep, exp, timeout, fixed_adjustments, shift, scale, 
 
         layer_weights = layer.get_weights()
 
-        # Things like input layer do have length 0.
+        # Things like input layer have length 0.
         if len(layer_weights) > 0:
             num_weights += np.prod(layer_weights[0].shape)
 
@@ -96,10 +80,13 @@ def train_equation_engineer(rep, exp, timeout, fixed_adjustments, shift, scale, 
 
     global best
 
-    # best = (error, weights)
+    # best = (error, weights, model)
     best = (float('inf'), None, None)
 
-    # weights = rng.uniform(-1, 1, size=num_weights)
+    num_targets = 1
+    num_base_function_per_target = 1
+    num_test_targets = 1
+    depth = 6
 
     # get data
     num_ops_train, datasets = get_data_for_equation_corrector(rng=rng,
@@ -145,15 +132,10 @@ def train_equation_engineer(rep, exp, timeout, fixed_adjustments, shift, scale, 
                     ('horizontal', horizontal),
                     ('max shift', max_adjustment),
                     ('timeout', timeout),
-                    ('fixed adjustment', fixed_adjustments),
-                    ('activation', activation.__name__),
-                    ('initial adjustment', initial_adjustment),
-                    ('initial parameter', initial_parameter)]
+                    ('fixed adjustment', fixed_adjustments)]
 
     df = pd.DataFrame(summary_data, columns=['Parameters', 'Values'])
     df.to_csv(os.path.join(save_loc, 'summary_exp'+str(exp)+'_'+dataset_name+'.csv'))
-
-    np.random.seed(seed)
 
     # get number of operations to evaluate training and validation datasets
     num_ops_per_tree = num_ops_train + num_ops_val
@@ -208,7 +190,7 @@ def train_equation_engineer(rep, exp, timeout, fixed_adjustments, shift, scale, 
         f_test_string = 'lambda x, v: '+tree_test.convert_lisp_to_standard_for_function_creation()+'+v'
 
     f_test = eval(f_test_string)
-    x_test = np.vstack((np.linspace(-1, 1, 20), np.linspace(-1, 1, 20)))
+    x_test = np.vstack((np.linspace(-1, 1, num_data_points), np.linspace(-1, 1, num_data_points)))
 
     if args.extra_constant:
         y_test = f_test(x_test, 5, 0.5)
@@ -218,25 +200,27 @@ def train_equation_engineer(rep, exp, timeout, fixed_adjustments, shift, scale, 
 
     # get the tree, +0 for the v
     f = eval(f_string)
-    x = np.vstack((np.linspace(-1, 1, 20), np.linspace(-1, 1, 20)))
+    x = np.vstack((np.linspace(-1, 1, num_data_points), np.linspace(-1, 1, num_data_points)))
 
     rng = np.random.RandomState(seed)
     v = rng.uniform(-5, 5)
+    
+    if args.extra_constant:
+        s = rng.uniform(-5, 5)
+        y = f(x, v, s)
+
+    else:
+        y = f(x, v)
 
     time_limit = 10
 
-    EE = SymbolicRegressionGame(rng=rng, x=x, y=None, f=f, time_limit=time_limit, tree=tree,
-                                # f_val=f_val, x_val=x_val,
+    EE = SymbolicRegressionGame(rng=rng, x=x, f=f, y=y, time_limit=time_limit, tree=tree,
                                 f_test=f_test, x_test=x_test, y_test=y_test,
                                 target=jumbled_target_name[-1], model=model,
                                 extra_constant=args.extra_constant)
 
     best_individual_data = [['Generation', 'Sum Train Error Sum','Test Error Sum', 'Number of Floating Point Operations']]
     gen = 0
-    # return_train_val = True
-    # return_avg = False
-    # return_test = False
-
     FLoPs_checkpoint = 0
     target_index = 1
 
@@ -245,8 +229,6 @@ def train_equation_engineer(rep, exp, timeout, fixed_adjustments, shift, scale, 
 
     mu = es.sp.weights.mu
     popsize = es.popsize
-    print('mu', mu)
-    print('popsize', popsize)
 
     # get CMA-ES ops
     n = len(weights)
@@ -324,16 +306,6 @@ def train_equation_engineer(rep, exp, timeout, fixed_adjustments, shift, scale, 
 
     df = pd.DataFrame(pop_data_summary, columns=['Generation', 'Mean Training Error', 'Mean Validation Error'])
     df.to_csv(os.path.join(save_loc, 'pop_data_summary_rep'+str(rep)+'_'+dataset_name+'.csv'), index=False)
-
-    # xopt = best[1]
-    
-    # errors = EE.play_game(weights=xopt, v=rng.uniform(-5,5), s=rng.uniform(-5,5))
-
-    # save the best individual
-    # data = [list(xopt)]
-    # df = pd.DataFrame(data).transpose()
-    # df.to_csv(os.path.join(save_loc, 'best_ind_weights_rep'+str(rep)+'_'+dataset_name+'.csv'),
-    #           header=['trained weights'])
 
     best[2].save(os.path.join(save_loc, 'best_ind_model_rep'+str(rep)+'_'+dataset_name+'.csv'))
 
@@ -600,7 +572,7 @@ if __name__ == '__main__':
 
     assert (args.shift or args.scale) and (args.horizontal or args.vertical), '--vertical or --horizontal must be used with --shift or --scale'
 
-    max_FLoPs = 10**7
+    max_FLoPs = 10**8
 
     max_adjustment = {'hshift': 5,
                       'vshift': 5,

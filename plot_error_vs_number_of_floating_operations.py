@@ -352,7 +352,7 @@ sig_level = 0.05/2
 
 # Flags to include gp and semantic gp in the
 # plots, or not.
-genetic_programming = False
+genetic_programming = True
 semantic_genetic_programming = False
 
 base_data_path = os.path.join(os.environ['EE_DATA'], 'experiment'+str(exp))
@@ -384,7 +384,7 @@ for test_function_name in function_names:
 
     print('test function', test_function_name)
 
-    if test_function_name not in ('quartic', 'keijzer11'):
+    if test_function_name not in ('septic'):#, 'keijzer11'):
         continue
 
     # This dictionary will keep track of the number of generations
@@ -655,7 +655,7 @@ for test_function_name in function_names:
 
         plt.semilogy(x[indices], y[indices], 'ok', ms=3)
 
-    switches = np.arange(0, 10**7+1, 10**6)
+    switches = np.arange(0, 10**8+1, 10**7)
     x = []
     y = []
     ylim = plt.ylim()

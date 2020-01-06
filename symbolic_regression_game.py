@@ -231,8 +231,9 @@ class SymbolicRegressionGame(gym.Env):
     def get_next_action(self, datatype):
 
         state = self.get_state(datatype)
-
         next_action = self.model.predict(state)
+        # print(state.shape)
+        # exit()
 
         return next_action
 
@@ -324,7 +325,6 @@ class SymbolicRegressionGame(gym.Env):
             action = self.get_next_action(datatype)
             state, reward, done, _ = self._step(action, datatype)
             neg_reward_sum += -reward
-            print('action', action)
 
         if final_error_only:
             return -reward
