@@ -618,7 +618,7 @@ class GeneticProgramming:
                                                 'CPU Time',
                                                 'Computation'])
 
-        df_best_ind.to_csv(os.path.join(output_path, 'best_data_rep'+str(rep)+'.csv'),
+        df_best_ind.to_csv(os.path.join(output_path, 'best_'+output_file),
                             index=None)
 
         if self.save_pop_data:
@@ -665,7 +665,7 @@ class GeneticProgramming:
             if i % 1000 == 0:
 
                 df_best = pd.DataFrame(best_data)
-                df_best.to_csv(os.path.join(output_path, 'best_data_rep'+str(rep)+'.csv'),
+                df_best.to_csv(os.path.join(output_path, 'best_'+output_file),
                                index=False,
                                header=None,
                                mode='a')
@@ -697,7 +697,7 @@ class GeneticProgramming:
         self.save_final_error(os.path.join(output_path, 'fitness_data_rep'+str(rep)+'_final'))
 
         df_best = pd.DataFrame(best_data)
-        df_best.to_csv(os.path.join(output_path, 'best_data_rep'+str(rep)+'.csv'),
+        df_best.to_csv(os.path.join(output_path, 'best_'+output_file),
                        index=False,
                        header=None,
                        mode='a')
