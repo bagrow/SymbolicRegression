@@ -659,9 +659,9 @@ for test_function_name in function_names:
     x = []
     y = []
     ylim = plt.ylim()
-    for s in switches:
+    # for s in switches:
 
-        plt.semilogy([s]*2, ylim, '--k', zorder=0, label='Training Switch')
+    #     plt.semilogy([s]*2, ylim, '--k', zorder=0, label='Training Switch')
 
     # Remove duplicat labels in the legend.
     handles, labels = plt.gca().get_legend_handles_labels()
