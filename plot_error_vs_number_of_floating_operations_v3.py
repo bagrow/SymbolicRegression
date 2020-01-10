@@ -579,7 +579,7 @@ for test_function_name in function_names:
 
     plt.close('all')
     plt.figure('train')
-    plt.figure('val')
+    plt.figure('validation')
     plt.figure('test')
 
     if equation_engineer:
@@ -592,7 +592,7 @@ for test_function_name in function_names:
         plt.figure('train')
         x, y = plot_confidence_interval(floating_ops_ee_all, train_error_ee_all, color='C0', label='EE')
 
-        plt.figure('val')
+        plt.figure('validation')
         x, y = plot_confidence_interval(floating_ops_ee_all, val_error_ee_all, color='C0', label='EE')
 
 
@@ -615,7 +615,7 @@ for test_function_name in function_names:
 
         x, y = plot_confidence_interval(floating_ops_gp_all, train_error_gp_all, color='C1', label='GP')
 
-        plt.figure('val')
+        plt.figure('validation')
         val_error_gp_all = [x[::100] for x in val_error_gp_all]
 
         x, y = plot_confidence_interval(floating_ops_gp_all, val_error_gp_all, color='C1', label='GP')
@@ -639,7 +639,7 @@ for test_function_name in function_names:
     x = []
     y = []
 
-    for fig_name in ['train', 'val', 'test']:
+    for fig_name in ['train', 'validation', 'test']:
 
         plt.figure(fig_name)
         ylim = plt.ylim()
@@ -656,7 +656,7 @@ for test_function_name in function_names:
         # Additional plot details
         plt.title(test_function_name+' '+fig_name)
         plt.xlabel('Number of Floating Point Operations')
-        plt.ylabel('Test Error')
+        plt.ylabel(fig_name.title()+' Error')
         # plt.yscale('log')
 
         plt.savefig(os.path.join(save_path, 'ee_gp_floating_ops_'+test_function_name+'_'+fig_name+'.pdf'))
