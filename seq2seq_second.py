@@ -243,7 +243,9 @@ class seq2seq():
                  return_decoded_list=False):
 
         fitness_sum = 0
+        fitnesses = []
 
+        # TODO: save each equation and each fitness
         for _ in range(self.timelimit):
 
             output = self.evaluate_single(x, y, f_hat, f_hat_seq,
@@ -251,6 +253,8 @@ class seq2seq():
                                           return_decoded_list=True)
 
             fitness = output['fitness']
+
+            fitnesses.append(fitness)
 
             # If the model really produced an equation...
             if output['equation'] is not None:
@@ -260,7 +264,8 @@ class seq2seq():
 
             fitness_sum += fitness     
 
-        output['fitness'] = fitness_sum
+        output['fitness_sum'] = fitness_sum 
+        output['fitnesses'] = fitnesses
         return output
 
 

@@ -7,8 +7,9 @@ import os
 
 class CmaesTrainsNn():
 
-	def __init__(self, exp, rep, model, x, y,
-				 x_test, y_test, test_dataset_name,
+	def __init__(self, exp, rep, model, x_train, Y_train,
+				 x_val, y_val, x_test, y_test,
+				 test_dataset_name,
 				 timelimit, options=None):
 		"""Initialize class with a model to train
 		and data to train it on. We would like to 
@@ -18,10 +19,14 @@ class CmaesTrainsNn():
 		----------
 		model : Seq2Seq
 			The model that will be trained by CMA-ES
-		x : np.array
+		x_train : np.array
 			The input data to f.
-		y : np.array
+		Y_train : np.array
 			The output data to f.
+		x_val : np.array
+			The input validation data to f.
+		y_val : np.array
+			The output validation data to f.
 		x_test : np.array
 			The input test data to f.
 		y_test : np.array
@@ -46,8 +51,14 @@ class CmaesTrainsNn():
 		
 		self.model = model
 
-		self.x = x
-		self.y = y
+		self.x_train = x_train
+		self.Y_train = Y_train
+		self.target_index = 0
+		self.y_train = Y_train[self.target_index]
+		self.target_index += 1
+
+		self.x_val = x_val
+		self.y_val = y_val
 
 		self.x_test = x_test
 		self.y_test = y_test
@@ -122,7 +133,8 @@ class CmaesTrainsNn():
 
 		gen = 0
 
-		best_individual_data = [['Generation', 'Train Error', 'Test Error', 'Number of Floating Point Operations']]
+		best_individual_data = [['Generation', 'Train Error Sum', 'Validation Error', 'Test Error', 'Number of Floating Point Operations']]
+		FLoPs_checkpoint = 0
 
 		while max_FLoPs >= self.model.FLoPs:
 
@@ -133,21 +145,30 @@ class CmaesTrainsNn():
 				solutions = es.ask()
 
 				fitnesses = []
+				val_fitnesses = []
 
 				# evaluate solutions (weights)
 				for w in solutions:
 
 					self.model.set_weights(model=self.model.model, weights=w)
 
-					output = self.model.evaluate(self.x, self.y, initial_f_hat, initial_f_hat_seq,
+					output = self.model.evaluate(self.x_train, self.y_train,
+												 initial_f_hat, initial_f_hat_seq,
 												 return_equation=True,
 												 return_decoded_list=True)
 
 
-					fitnesses.append(output['fitness'])
+					fitnesses.append(output['fitness_sum'])
 
-					if output['decoded_list'] is not None:
-						print('final equation', ' '.join(output['decoded_list']))
+					val_output = self.model.evaluate(self.x_val, self.y_val,
+												 initial_f_hat, initial_f_hat_seq,
+												 return_equation=True,
+												 return_decoded_list=True)
+
+					val_fitnesses.append(val_output['fitness'])
+
+					# if output['decoded_list'] is not None:
+					# 	print('final equation', ' '.join(output['decoded_list']))
 
 				# Let ES update the weights based on
 				# the fitness computed during evaluation.
@@ -156,11 +177,11 @@ class CmaesTrainsNn():
 
 				# Keep track of best (lowest fitness)
 				# individual
-				best_index = np.argmin(fitnesses)
+				best_index = np.argmin(val_fitnesses)
 
-				if fitnesses[best_index] < self.best[0]:
+				if val_fitnesses[best_index] <= self.best[0]:
 					self.model.set_weights(weights=solutions[best_index], model=self.model.model)
-					self.best = (fitnesses[best_index], solutions[best_index], self.model.model)
+					self.best = (val_fitnesses[best_index], solutions[best_index], self.model.model, fitnesses[best_index])
 					print('new best', self.best[0])
 
 				gen += 1
@@ -171,12 +192,13 @@ class CmaesTrainsNn():
 				# save best individuals during training
 				self.model.set_weights(weights=self.best[1], model=self.model.model)
 
-				output = self.model.evaluate(self.x_test, self.y_test, initial_f_hat, initial_f_hat_seq,
+				output = self.model.evaluate(self.x_test, self.y_test,
+											 initial_f_hat, initial_f_hat_seq,
 											 return_equation=True,
 											 return_decoded_list=True)
 
-				# test_output = self.model.evaluate(self.x_test, self.y_test, f_hat, f_hat_seq)
 				best_individual_data.append([gen,
+											 self.best[3],
 											 self.best[0],
 											 output['fitness'],
 											 self.model.FLoPs])
@@ -187,23 +209,14 @@ class CmaesTrainsNn():
 				if max_FLoPs < self.model.FLoPs:
 					break
 
-				# if self.model.FLoPs - FLoPs_checkpoint > max_FLoPs/(len(target_names)-1):
+				if self.model.FLoPs - FLoPs_checkpoint > max_FLoPs/len(self.Y_train):
 
-				# 	# update training data but not testing data
-				# 	tree = GP.Tree(rng=self.rng, tree='(+ '+lisps[jumbled_target_name[target_index]]+' (0))', num_vars=2)
+					self.y_train = self.Y_train[self.target_index]
 
-				# 	if EE.extra_constant:
-				# 		f = eval('lambda x, v, s: s*('+tree.convert_lisp_to_standard_for_function_creation()+')+v')
-
-				# 	else:
-				# 		f = eval('lambda x, v: '+tree.convert_lisp_to_standard_for_function_creation()+'+v')
-
-				# 	EE.tree = tree
-				# 	EE.f = f
+					self.target_index += 1
 					
-				# 	FLoPs_checkpoint += max_FLoPs/(len(target_names)-1)
-				# 	print('checkpoint', jumbled_target_name[target_index])
-				# 	target_index += 1
+					FLoPs_checkpoint += max_FLoPs/len(self.Y_train)
+					print('changing target')
 
 			es.result_pretty()
 
@@ -212,12 +225,6 @@ class CmaesTrainsNn():
 				weights = self.rng.uniform(-1, 1, size=num_weights)
 				cmaes_options['seed'] += 10**7
 				es = cma.CMAEvolutionStrategy(weights, sigma, cmaes_options)
-
-		# Get best equation by training
-		# self.model.set_weights(model=self.model.model, weights=getattr(es.result, 'xbest'))
-		# output = self.model.evaluate(self.x, self.y, f_hat, f_hat_seq,
-		# 							 return_equation_str=True)
-		# print('eq', output['equation_str'])
 
 		# Save data about the fitting
 		df = pd.DataFrame(best_individual_data[1:], columns=best_individual_data[0])
