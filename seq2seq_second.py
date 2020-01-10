@@ -53,20 +53,20 @@ class seq2seq():
             # except terminal when constructing the tail.
             tokens_to_remove = ['START', 'STOP']
 
-            self.start_indices = list(range(len(self.target_token_index)))
+            self.not_start_indices = list(range(len(self.target_token_index)))
             for token in tokens_to_remove:
-                self.start_indices.remove(self.target_token_index[token])
+                self.not_start_indices.remove(self.target_token_index[token])
 
-            self.start_indices = np.array(self.start_indices)
+            self.not_start_indices = np.array(self.not_start_indices)
             
             # get indices of primitive
             tokens_to_remove.extend(self.primitive_set)
 
-            self.primitive_indices = list(range(len(self.target_token_index)))
+            self.terminal_indices = list(range(len(self.target_token_index)))
             for token in tokens_to_remove:
-                self.primitive_indices.remove(self.target_token_index[token])
+                self.terminal_indices.remove(self.target_token_index[token])
 
-            self.primitive_indices = np.array(self.primitive_indices)
+            self.terminal_indices = np.array(self.terminal_indices)
 
         self.model = self.get_model()
 
@@ -80,7 +80,6 @@ class seq2seq():
         the decoder generates is own input data (except for the first token 'START')
         even during training."""
 
-        # +2 for START and STOP
         self.num_decoder_tokens = len(self.target_characters)
 
         # latent_dim is the dimensionality of the state vector that the encoder/decoder share
@@ -90,23 +89,25 @@ class seq2seq():
 
         # Define data encoder
         data_encoder_inputs = Input(shape=(None, self.num_data_encoder_tokens))
-        data_encoder_rnn1 = SimpleRNN(latent_dim, return_sequences=True, activation='relu')
+        data_encoder_rnn1 = SimpleRNN(latent_dim, return_state=True, return_sequences=True, activation='relu')
         data_encoder_rnn2 = SimpleRNN(latent_dim, return_state=True, activation='relu')
 
-        data_encoder_rnn1_output = data_encoder_rnn1(data_encoder_inputs, initial_state=initial_states)
-        data_encoder_outputs, data_state_h = data_encoder_rnn2(data_encoder_rnn1_output, initial_state=initial_states)
+        data_encoder_rnn1_output, data_state_h1 = data_encoder_rnn1(data_encoder_inputs, initial_state=initial_states)
+        data_encoder_outputs, data_state_h2 = data_encoder_rnn2(data_encoder_rnn1_output, initial_state=initial_states)
 
         # Define equation encoder
         eq_encoder_inputs = Input(shape=(None, len(self.target_characters)))
-        eq_encoder_rnn1 = SimpleRNN(latent_dim, return_sequences=True, activation='relu')
+        eq_encoder_rnn1 = SimpleRNN(latent_dim, return_state=True, return_sequences=True, activation='relu')
         eq_encoder_rnn2 = SimpleRNN(latent_dim, return_state=True, activation='relu')
 
-        eq_encoder_rnn1_output = eq_encoder_rnn1(eq_encoder_inputs, initial_state=initial_states)
-        eq_encoder_outputs, eq_state_h = eq_encoder_rnn2(eq_encoder_rnn1_output, initial_state=initial_states)
+        eq_encoder_rnn1_output, eq_state_h1 = eq_encoder_rnn1(eq_encoder_inputs, initial_state=initial_states)
+        eq_encoder_outputs, eq_state_h2 = eq_encoder_rnn2(eq_encoder_rnn1_output, initial_state=initial_states)
         
         # We discard `encoder_outputs` and only keep the states.
         # encoder_states = [state_h, state_c]
-        encoder_states = K.concatenate((data_state_h, eq_state_h), axis=-1)
+        encoder_states_layer1 = K.concatenate((data_state_h1, eq_state_h1), axis=-1)
+        encoder_states_layer2 = K.concatenate((data_state_h2, eq_state_h2), axis=-1)
+
 
         # Set up the decoder, which will only process one timestep at a time.
         decoder_inputs = Input(shape=(1, self.num_decoder_tokens))
@@ -116,14 +117,15 @@ class seq2seq():
 
         all_outputs = []
         inputs = decoder_inputs
-        decoder_rnn1_states = encoder_states
+        decoder_rnn1_states = encoder_states_layer1
+        decoder_rnn2_states = encoder_states_layer2
 
         for _ in range(self.max_decoder_seq_length):
 
             # Run the decoder on one timestep
             # outputs, state_h, state_c = decoder_lstm(inputs, initial_state=encoder_states)
             decoder_rnn1_outputs, decoder_rnn1_states = decoder_rnn1(inputs, initial_state=decoder_rnn1_states)
-            decoder_rnn2_outputs, decoder_rnn2_states = decoder_rnn2(decoder_rnn1_outputs, initial_state=decoder_rnn1_states)
+            decoder_rnn2_outputs, decoder_rnn2_states = decoder_rnn2(decoder_rnn1_outputs, initial_state=decoder_rnn2_states)
 
             decoder_dense_outputs = decoder_dense(decoder_rnn2_outputs)
             
@@ -248,8 +250,14 @@ class seq2seq():
         # get the lowest error
         fitness_best = float('inf')
 
+        # We will keep track of the min error
+        # over the previous period scores.
+        period = 5
+        moment_scores = []
+        current_momement_score = float('inf')
+
         # TODO: save each equation and each fitness
-        for _ in range(self.timelimit):
+        for t in range(1, 1+self.timelimit):
 
             output = self.evaluate_single(x, y, f_hat, f_hat_seq,
                                           return_equation=True,
@@ -263,12 +271,34 @@ class seq2seq():
             fitnesses.append(fitness)
 
             # If the model really produced an equation...
+            # This does not happen for k-expressions
             if output['equation'] is not None:
 
                 f_hat = output['equation']
                 f_hat_seq = output['decoded_list']
 
-            fitness_sum += fitness     
+            fitness_sum += fitness
+
+            if t % period == 0:
+
+                moment_scores.append(current_momement_score)
+
+                # # Don't need more than the latest two
+                # # moment scores.
+                # if len(moment_scores) == 3:
+                #     del moment_scores[0]
+
+                if len(moment_scores) >= 2:
+
+                    # if solution has deteriorated between past
+                    # two moments
+                    if moment_scores[-1] >= moment_scores[-2]:
+                        break
+
+                current_momement_score = float('inf')  
+
+            if current_momement_score > fitness:
+                    current_momement_score = fitness 
 
         output['fitness_sum'] = fitness_sum 
         output['fitnesses'] = fitnesses
@@ -295,9 +325,9 @@ class seq2seq():
             # Don't pick terminals in the tail
             for i, row in enumerate(prediction[0]):
                 if i >= self.head_length:
-                    prediction[0, i, self.primitive_indices] += 2.
+                    prediction[0, i, self.terminal_indices] += 2.
                 else:
-                    prediction[0, i, self.start_indices] += 2.
+                    prediction[0, i, self.not_start_indices] += 2.
 
         # decoded in terms of seq2seq model -- still a k-expression
         decoded_string = self.read_decoded_output(prediction)
@@ -327,7 +357,7 @@ class seq2seq():
 
             if self.options['use_k-expressions']:
 
-                lisp = build_tree(decoded_list)
+                lisp, short_gene = build_tree(decoded_list, return_short_gene=True)
 
             else:
 

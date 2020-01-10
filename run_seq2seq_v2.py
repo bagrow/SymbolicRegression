@@ -30,11 +30,13 @@ else:
 primitive_set = ['*', '+', '-']
 terminal_set = ['x0']
 
+timelimit = 100
+
 s2s = seq2seq(num_data_encoder_tokens=2,
               primitive_set=primitive_set,
               terminal_set=terminal_set,
-              max_decoder_seq_length=10,
-              timelimit=10,
+              # max_decoder_seq_length=10,
+              timelimit=timelimit,
               options=options)
 
 function_strs = ['x[0]', '2*x[0]', 'x[0]**2', 'x[0]**2 + x[0]', 'x[0]**3']
@@ -113,7 +115,7 @@ else:
                            x_train=x_train, Y_train=Y_train,
                            x_val=x_val, y_val=y_val,
                            x_test=x_test, y_test=y_test, test_dataset_name='test',
-                           timelimit=10,
+                           timelimit=timelimit,
                            options=options)
 
     cmaes_options = {'popsize': 100,

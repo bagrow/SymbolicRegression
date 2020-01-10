@@ -123,7 +123,7 @@ def get_tail_size(head_size, max_num_children):
     return head_size*(max_num_children-1)+1
 
 
-def build_tree(gene):
+def build_tree(gene, return_short_gene=False):
     """Take list version of equation
     and make a tree."""
 
@@ -237,7 +237,17 @@ def build_tree(gene):
         if loc != ():
             T.add_edge(loc, loc[:-1])
 
-    return to_s_expression(T, ())
+    lisp = to_s_expression(T, ())
+
+    if return_short_gene:
+
+        short_gene_end_index = sum([len(x) for x in tree_list])
+        short_gene = gene[:short_gene_end_index]
+
+        return lisp, short_gene
+    
+    else:
+        return lisp
 
 
 def get_individual(rng, w, recursive_weights, num_hidden, num_outputs, primitives, terminals,
@@ -255,7 +265,7 @@ def get_individual(rng, w, recursive_weights, num_hidden, num_outputs, primitive
 
 
 def to_s_expression(T, root, canonical_form=False):
-    """Modified version of nx.to_nested_tuple().
+    """Modified version of networkx.to_nested_tuple().
 
     Returns a nested tuple representation of the given tree.
 

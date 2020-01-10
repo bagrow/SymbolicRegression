@@ -126,10 +126,10 @@ class CmaesTrainsNn():
 		initial_f_hat = lambda x: 0*x[0]
 
 		if self.options['use_k-expressions']:
-			initial_f_hat_seq = ['START', '-', 'x0', 'x0'] + ['x0']*(self.model.head_length+self.model.tail_length-4)
+			initial_f_hat_seq = ['-', 'x0', 'x0']
 
 		else:
-			initial_f_hat_seq = ['START', '-', 'x0', 'x0', 'STOP']
+			initial_f_hat_seq = ['-', 'x0', 'x0', 'STOP']
 
 		gen = 0
 
