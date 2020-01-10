@@ -158,14 +158,17 @@ class CmaesTrainsNn():
 												 return_decoded_list=True)
 
 
-					fitnesses.append(output['fitness_sum'])
+					# fitnesses.append(output['fitness_sum'])
+					fitnesses.append(output['fitness_best'])
+
 
 					val_output = self.model.evaluate(self.x_val, self.y_val,
 												 initial_f_hat, initial_f_hat_seq,
 												 return_equation=True,
 												 return_decoded_list=True)
 
-					val_fitnesses.append(val_output['fitness'])
+					# val_fitnesses.append(val_output['fitness'])
+					val_fitnesses.append(val_output['fitness_best'])
 
 					# if output['decoded_list'] is not None:
 					# 	print('final equation', ' '.join(output['decoded_list']))
@@ -200,7 +203,8 @@ class CmaesTrainsNn():
 				best_individual_data.append([gen,
 											 self.best[3],
 											 self.best[0],
-											 output['fitness'],
+											 # output['fitness'],
+											 output['fitness_best'],
 											 self.model.FLoPs])
 
 				print('total compute', self.model.FLoPs)

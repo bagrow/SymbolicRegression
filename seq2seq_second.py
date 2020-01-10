@@ -245,6 +245,9 @@ class seq2seq():
         fitness_sum = 0
         fitnesses = []
 
+        # get the lowest error
+        fitness_best = float('inf')
+
         # TODO: save each equation and each fitness
         for _ in range(self.timelimit):
 
@@ -253,6 +256,9 @@ class seq2seq():
                                           return_decoded_list=True)
 
             fitness = output['fitness']
+
+            if fitness < fitness_best:
+                fitness_best = fitness
 
             fitnesses.append(fitness)
 
@@ -266,6 +272,7 @@ class seq2seq():
 
         output['fitness_sum'] = fitness_sum 
         output['fitnesses'] = fitnesses
+        output['fitness_best'] = fitness_best
         return output
 
 
