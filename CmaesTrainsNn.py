@@ -63,7 +63,7 @@ class CmaesTrainsNn():
 		self.x_test = x_test
 		self.y_test = y_test
 
-		self.best = (float('inf'), None, None)
+		self.best = (float('inf'), None, None, None, None)
 
 		self.test_dataset_name = test_dataset_name
 		self.timelimit = timelimit
@@ -133,7 +133,14 @@ class CmaesTrainsNn():
 
 		gen = 0
 
-		best_individual_data = [['Generation', 'Train Error Sum', 'Validation Error', 'Test Error', 'Number of Floating Point Operations']]
+		best_individual_data = [['Generation',
+								 'Target Index',
+								 'Train Error Sum',
+								 'Validation Error',
+								 'Test Error',
+								 'Number of Unique Validation Errors',
+								 'Number of Validation Errors',
+								 'Number of Floating Point Operations']]
 		FLoPs_checkpoint = 0
 
 		while max_FLoPs >= self.model.FLoPs:
@@ -146,6 +153,8 @@ class CmaesTrainsNn():
 
 				fitnesses = []
 				val_fitnesses = []
+				num_unique_fitnesses = []
+				num_fitnesses = []
 
 				# evaluate solutions (weights)
 				for w in solutions:
@@ -169,6 +178,8 @@ class CmaesTrainsNn():
 
 					# val_fitnesses.append(val_output['fitness'])
 					val_fitnesses.append(val_output['fitness_best'])
+					num_unique_fitnesses.append(len(np.unique(val_output['fitnesses'])))
+					num_fitnesses.append(len(val_output['fitnesses']))
 
 					# if output['decoded_list'] is not None:
 					# 	print('final equation', ' '.join(output['decoded_list']))
@@ -184,7 +195,12 @@ class CmaesTrainsNn():
 
 				if val_fitnesses[best_index] <= self.best[0]:
 					self.model.set_weights(weights=solutions[best_index], model=self.model.model)
-					self.best = (val_fitnesses[best_index], solutions[best_index], self.model.model, fitnesses[best_index])
+					self.best = (val_fitnesses[best_index],
+						         solutions[best_index],
+						         self.model.model,
+						         fitnesses[best_index],
+						         num_unique_fitnesses[best_index],
+						         num_fitnesses[best_index])
 					print('new best', self.best[0])
 
 				gen += 1
@@ -201,10 +217,13 @@ class CmaesTrainsNn():
 											 return_decoded_list=True)
 
 				best_individual_data.append([gen,
+											 self.target_index,
 											 self.best[3],
 											 self.best[0],
 											 # output['fitness'],
 											 output['fitness_best'],
+											 self.best[4],
+											 self.best[5],
 											 self.model.FLoPs])
 
 				print('total compute', self.model.FLoPs)
@@ -221,6 +240,11 @@ class CmaesTrainsNn():
 					
 					FLoPs_checkpoint += max_FLoPs/len(self.Y_train)
 					print('changing target')
+
+					# At this point, it would be ideal if self.model.FLoPs is
+					# equal to FLoPs_checkpoint to allow roughly equal compute
+					# between targets. So, we cheat and reselt self.model.FLoPs
+					self.model.FLoPs = FLoPs_checkpoint
 
 			es.result_pretty()
 

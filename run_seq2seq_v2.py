@@ -39,18 +39,26 @@ s2s = seq2seq(num_data_encoder_tokens=2,
               timelimit=timelimit,
               options=options)
 
-function_strs = ['x[0]', '2*x[0]', 'x[0]**2', 'x[0]**2 + x[0]', 'x[0]**3']
+# function_strs = ['x[0]', '2*x[0]', 'x[0]**2', 'x[0]**2 + x[0]', 'x[0]**3']
+function_strs = ['x[0]**4 + x[0]**3 + x[0]**2 + x[0]',   # Koza-1
+                 'x[0]**5 - 2*x[0]**3 + x[0]',   # Koza-2
+                 'x[0]**6 - 2*x[0]**4 + x[0]**2',    # Koza-3
+                 'x[0]**3 + x[0]**2 + x[0]', # Nguyen-1
+                 'x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]' # Nguyen-3
+                ]
+
 functions = [eval('lambda x: '+f_str) for f_str in function_strs]
 
 x_train = np.linspace(-1, 1, 20)[None, :] 
 Y_train = [f(x_train) for f in functions]
 
 x_val = np.linspace(-1, 1, 20)[None, :]
-f_val = lambda x: x[0]**4
+f_val = lambda x: x[0]**4 + x[0]
 y_val = f_val(x_val)
 
 x_test = np.linspace(-1, 1, 20)[None, :] 
-f_test = lambda x: x[0]**4 + x[0]**3 + x[0]**2 + x[0]
+# f_test = lambda x: x[0]**4 + x[0]**3 + x[0]**2 + x[0]
+f_test = lambda x: x[0]**6 + x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]
 y_test = f_test(x_test)
 
 rep = args.rep

@@ -344,7 +344,7 @@ train_switch_step = 2*10**9
 max_train_switches = 10**10
 
 # experiment number
-exp = 7
+exp = 10
 
 # number of runs (repetitions)
 nreps = 30
@@ -363,7 +363,7 @@ sig_level = 0.05/2
 # plots, or not.
 equation_engineer = True
 genetic_programming = True
-semantic_genetic_programming = False
+semantic_genetic_programming = True
 
 base_data_path = os.path.join(os.environ['EE_DATA'], 'experiment'+str(exp))
 
@@ -414,6 +414,7 @@ for test_function_name in function_names:
     val_error_gp_all = []
     floating_ops_gp_all = []
     error_sgp_all = []
+    train_error_sgp_all = []
     floating_ops_sgp_all = []
 
     # for each repetition.
@@ -489,48 +490,51 @@ for test_function_name in function_names:
             # Again, due to the separate target functions, we create empty lists
             # and extend them.
             error_sgp_all.append([])
+            train_error_sgp_all.append([])
             floating_ops_sgp_all.append([])
             
             # Let's loop over all the training functions.
             # By training function, I mean the function that correspond
             # to the training set.
-            for training_function_name in sgp_function_order:
+            for train_target_num in range(num_train_targets):
 
-                path_sgp = os.path.join(base_data_path, 'semantic_gp', test_function_name)
-                
+                path_sgp = os.path.join(base_data_path, 'semantic_gp')
+
                 # The floating_ops and error are stored in separate files, so
                 # both are opened here.
-                df_sgp = pd.read_csv(os.path.join(path_sgp, 'test_error_FPM_0.0_1.0_'+training_function_name+'_rep'+str(rep)+'__'+str(exp)+'.log'))
-                df_sgp_floating_ops = pd.read_csv(os.path.join(path_sgp, 'FPM_0.0_1.0_'+training_function_name+'_rep'+str(rep)+'__'+str(exp)+'.log'))
+                df_sgp = pd.read_csv(os.path.join(path_sgp, 'best_tree_FPM_0.0_1.0'+'_train'+str(train_target_num)+'_rep'+str(rep)+'__'+str(exp)+'.csv'))
+                # df_sgp_floating_ops = pd.read_csv(os.path.join(path_sgp, 'FPM_0.0_1.0'+'_train'+str(train_target_num)+'_rep'+str(rep)+'__'+str(exp)+'.log'))
 
                 # Keep track of total floating ops
-                diff_total_floating_ops_sgp = df_sgp_floating_ops['compute'].values[-1]
+                diff_total_floating_ops_sgp = df_sgp['compute'].values[-1]
 
                 error_sgp = df_sgp['test_error'].values
+                train_error_sgp = df_sgp['train_error'].values
 
-                floating_ops_sgp = total_floating_ops_sgp + df_sgp_floating_ops['compute'].values
+                floating_ops_sgp = total_floating_ops_sgp + df_sgp['compute'].values
 
 
-                if training_function_name == test_function_name:
+                # if training_function_name == test_function_name:
 
-                    # get plot data
-                    error_sgp_all[-1].extend(error_sgp)
-                    floating_ops_sgp_all[-1].extend(floating_ops_sgp)
+                #     # get plot data
+                #     error_sgp_all[-1].extend(error_sgp)
+                #     floating_ops_sgp_all[-1].extend(floating_ops_sgp)
 
-                    # get test data, data to be compared against EE
-                    # with a statistical test
-                    testdata_sgp['error'][rep] = error_sgp
-                    testdata_sgp['floating_ops'][rep] = df_sgp_floating_ops['compute'].values
+                # get test data, data to be compared against EE
+                # with a statistical test
+                testdata_sgp['error'][rep] = error_sgp
+                testdata_sgp['floating_ops'][rep] = df_sgp['compute'].values
 
-                else:
+                # else:
 
-                    # get plot data
-                    error_sgp_all[-1].extend(error_sgp)
-                    floating_ops_sgp_all[-1].extend(floating_ops_sgp)
+                # get plot data
+                error_sgp_all[-1].extend(error_sgp)
+                train_error_sgp_all[-1].extend(train_error_sgp)
+                floating_ops_sgp_all[-1].extend(floating_ops_sgp)
 
-                    # Get more plot data. These are the points where
-                    # the training dataset swiched.
-                    training_switches_floating_ops_sgp.append(floating_ops_sgp[-1])
+                # # Get more plot data. These are the points where
+                # # the training dataset swiched.
+                # training_switches_floating_ops_sgp.append(floating_ops_sgp[-1])
 
                 # update total floating ops
                 total_floating_ops_sgp += diff_total_floating_ops_sgp
@@ -580,7 +584,7 @@ for test_function_name in function_names:
     plt.close('all')
     plt.figure('train')
     plt.figure('validation')
-    plt.figure('test')
+    plt.figure('test', figsize=(7.5/2, 7.5/2*4.8/6.4))
 
     if equation_engineer:
         
@@ -631,9 +635,11 @@ for test_function_name in function_names:
         # Now, we do the same thing for semantic gp
         x, y = plot_confidence_interval(floating_ops_sgp_all, error_sgp_all, color='C2', label='Semantic GP')
 
-        indices = np.array([find_nearest(f, x) for f in training_switches_floating_ops_sgp])
+        plt.figure('train')
 
-        plt.plot(x[indices], y[indices], 'ok', ms=3)
+        x, y = plot_confidence_interval(floating_ops_sgp_all, train_error_sgp_all, color='C2', label='Semantic GP')
+
+
 
     switches = np.arange(0, max_train_switches+1, train_switch_step)
     x = []
@@ -659,6 +665,7 @@ for test_function_name in function_names:
         plt.ylabel(fig_name.title()+' Error')
         # plt.yscale('log')
 
+        plt.tight_layout()
         plt.savefig(os.path.join(save_path, 'ee_gp_floating_ops_'+test_function_name+'_'+fig_name+'.pdf'))
 
     if testdata_ee['error']:
@@ -674,20 +681,8 @@ for test_function_name in function_names:
     # the gp data collection does not break the script.
     if testdata_gp['error']:
 
-        # rep: index
-        gp_indices = {}
-
-        # Get the index corresponding to the first floating op count
-        # that is greater than the one for EE. There error at this point
-        # will be used for the comparison.
-        for rep in testdata_gp['floating_ops']:
-            for i, c in enumerate(testdata_gp['floating_ops'][rep]):
-                if c > floating_ops_level:
-                    gp_indices[rep] = i
-                    break
-
         # Use the indices to get the error
-        gp_test_final = [testdata_gp['error'][rep][gp_indices[rep]] for rep in gp_indices]
+        gp_test_final = [testdata_gp['error'][rep][-1] for rep in testdata_gp['error']]
 
         # Do the test: Is EE < GP in terms of test error for given amount of floating ops?
         stat, pvalue = scipy.stats.mannwhitneyu(ee_test_final, gp_test_final, alternative='less')
