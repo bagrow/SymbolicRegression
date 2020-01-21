@@ -878,6 +878,36 @@ class Individual(Tree):
         return self.testing_fitness
 
 
+    def get_number_of_operations_in_tree_eval(self, num_data_points):
+        """Each non-leaf node is an operation, so
+        the number of operations in a single evaluation
+        of a tree is equal to the number of non-leaf
+        nodes. Then, RMSE is done.
+
+        Parameters
+        ----------
+        num_data_points : int
+            The number of points in the dataset. Also, the number
+            of times the tree will be evaluated on data.
+
+        Returns
+        -------
+        num_non-leaves : int
+            The number of non-leaf nodes (number of floating
+            point operations performed per evaluation)
+        """
+
+        num_leaves, num_nodes = self.get_num_leaves(num_nodes=True)
+        num_nonleaves = num_nodes - num_leaves
+
+        num_ops_per_eval = num_nonleaves
+
+        # *2 since this is done for training and validation
+        num_ops_per_RMSE = 2*(3*num_data_points + 1)
+
+        return num_ops_per_RMSE + num_data_points*num_ops_per_eval
+
+
     def __eq__(self, other):
         """In terms of the pareto front. Two individuals are
         considered identical if their fitness (in all objectives)

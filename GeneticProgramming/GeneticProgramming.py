@@ -275,10 +275,15 @@ class GeneticProgramming:
     def compute_fitness(self):
         """Compute fitness (error) for all individuals."""
 
+        num_data_points = len(self.data[0]) + len(self.data[1])
+
         for i, individual in enumerate(self.pop):
+
             self.evaluate_individual(individual, self.data)
 
-        self.number_of_operations += self.get_num_ops_for_current_generation()
+            ind_FLoPs = individual.get_number_of_operations_in_tree_eval(num_data_points)
+
+            self.number_of_operations += ind_FLoPs
 
 
     def evaluate_individual(self, ind, data, skip=False):
@@ -299,6 +304,9 @@ class GeneticProgramming:
         skip : bool
             If true, skip the error calculation
         """
+
+        print('in evaluate_individual')
+        exit()
 
         if not skip:
             ind.evaluate_individual_error(data)
@@ -518,27 +526,6 @@ class GeneticProgramming:
                               'Validation',
                               'Testing',
                               'Objective 2 on Training Data'])
-
-
-    def get_num_ops_for_current_generation(self):
-
-        # Get number of floating point operations in this generation
-        # and increase self.number_of_operations by the amounts
-        num_ops_tree_single_eval =  []
-
-        for p in self.pop:
-
-            num_leaves, num_nodes = p.get_num_leaves(num_nodes=True)
-            num_nonleaves = num_nodes - num_leaves
-            num_ops_tree_single_eval.append(num_nonleaves)
-
-        num_data_points = len(self.data[0])+len(self.data[1])
-
-        num_ops_per_RMSE = 3*num_data_points + 1
-
-        total_for_each_tree = [x*num_data_points + num_ops_per_RMSE for x in num_ops_tree_single_eval]
-
-        return sum(total_for_each_tree)
 
 
     def update_best_individual(self):
