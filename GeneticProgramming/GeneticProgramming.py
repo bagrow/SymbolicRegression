@@ -281,7 +281,7 @@ class GeneticProgramming:
 
             self.evaluate_individual(individual, self.data)
 
-            ind_FLoPs = individual.get_number_of_operations_in_tree_eval(num_data_points)
+            ind_FLoPs = individual.get_number_of_operations_in_tree_eval(self.data)
 
             self.number_of_operations += ind_FLoPs
 

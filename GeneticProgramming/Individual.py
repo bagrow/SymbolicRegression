@@ -878,7 +878,7 @@ class Individual(Tree):
         return self.testing_fitness
 
 
-    def get_number_of_operations_in_tree_eval(self, num_data_points):
+    def get_number_of_operations_in_tree_eval(self, datasets):
         """Each non-leaf node is an operation, so
         the number of operations in a single evaluation
         of a tree is equal to the number of non-leaf
@@ -886,9 +886,8 @@ class Individual(Tree):
 
         Parameters
         ----------
-        num_data_points : int
-            The number of points in the dataset. Also, the number
-            of times the tree will be evaluated on data.
+        datasets : list
+            The training and validation datasets
 
         Returns
         -------
@@ -901,6 +900,8 @@ class Individual(Tree):
         num_nonleaves = num_nodes - num_leaves
 
         num_ops_per_eval = num_nonleaves
+
+        num_data_points = len(datasets[0]) + len(datasets[1])
 
         # *2 since this is done for training and validation
         num_ops_per_RMSE = 2*(3*num_data_points + 1)
