@@ -903,8 +903,7 @@ class Individual(Tree):
 
         num_data_points = len(datasets[0]) + len(datasets[1])
 
-        # *2 since this is done for training and validation
-        num_ops_per_RMSE = 2*(3*num_data_points + 1)
+        num_ops_per_RMSE = 3*num_data_points + 1
 
         return num_ops_per_RMSE + num_data_points*num_ops_per_eval
 
