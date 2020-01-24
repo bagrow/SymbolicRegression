@@ -11,15 +11,20 @@ import numpy as np
 
 class seq2seq():
 
-    def __init__(self, num_data_encoder_tokens,
+    def __init__(self, rng, num_data_encoder_tokens,
                  primitive_set, terminal_set,
                  max_decoder_seq_length=None,
-                 timelimit=1,
+                 timelimit=1, use_constants=False,
                  options=None):
         """Initialize the seq2seq model"""
 
+        self.rng = rng
+
+        self.use_constants = use_constants
+
         self.primitive_set = primitive_set
         self.terminal_set = terminal_set
+
         self.num_data_encoder_tokens = num_data_encoder_tokens
         self.num_samples = 1
 
@@ -52,6 +57,9 @@ class seq2seq():
             # We will also stop the NN from outputing anything
             # except terminal when constructing the tail.
             tokens_to_remove = ['START', 'STOP']
+
+            if self.use_constants:
+                tokens_to_remove.append('const_value')
 
             self.not_start_indices = list(range(len(self.target_token_index)))
             for token in tokens_to_remove:
@@ -108,14 +116,22 @@ class seq2seq():
         encoder_states_layer1 = K.concatenate((data_state_h1, eq_state_h1), axis=-1)
         encoder_states_layer2 = K.concatenate((data_state_h2, eq_state_h2), axis=-1)
 
-
         # Set up the decoder, which will only process one timestep at a time.
         decoder_inputs = Input(shape=(1, self.num_decoder_tokens))
         decoder_rnn1 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation='relu')
         decoder_rnn2 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation='relu')
-        decoder_dense = Dense(self.num_decoder_tokens, activation='softmax')
+
+        if self.use_constants:
+            # separate constant value from other, so that 
+            # the activation function can be different
+            decoder_dense_const = Dense(1, activation='tanh')
+            decoder_dense = Dense(self.num_decoder_tokens-1, activation='softmax')
+
+        else:
+            decoder_dense = Dense(self.num_decoder_tokens, activation='softmax')
 
         all_outputs = []
+        all_outputs_const = []
         inputs = decoder_inputs
         decoder_rnn1_states = encoder_states_layer1
         decoder_rnn2_states = encoder_states_layer2
@@ -129,24 +145,61 @@ class seq2seq():
 
             decoder_dense_outputs = decoder_dense(decoder_rnn2_outputs)
             
+            if self.use_constants:
+                decoder_dense_const_output = decoder_dense_const(decoder_rnn2_outputs)
+            
             # Store the current prediction (we will concatenate all predictions later)
             all_outputs.append(decoder_dense_outputs)
             
+            if self.use_constants:
+                all_outputs_const.append(decoder_dense_const_output)
+            
             # Reinject the outputs as inputs for the next loop iteration
             # as well as update the states
-            inputs = decoder_dense_outputs
+            if self.use_constants:
+                inputs = Lambda(lambda x: K.concatenate(x))([decoder_dense_outputs, decoder_dense_const_output])
+
+            else:
+                inputs = decoder_dense_outputs
 
         # Concatenate all predictions
         decoder_outputs = Lambda(lambda x: K.concatenate(x, axis=1))(all_outputs)
 
+        if self.use_constants:
+            decoder_outputs_const = Lambda(lambda x: K.concatenate(x, axis=1))(all_outputs_const)
+
         # Define and compile model as previously
-        model = Model([initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs], decoder_outputs)
+        if self.use_constants:
+            model = Model([initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs], [decoder_outputs, decoder_outputs_const])
+    
+        else:
+            model = Model([initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs], decoder_outputs)
+
         model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+
+        # get compute function for fast computing while
+        # evaluation model
+        eq_nodes = len(self.terminal_set)+len(self.primitive_set)
+
+        output_len = self.head_length+self.tail_length
+        activations_in_model = lambda eq_input_len, data_input_len: eq_input_len*(eq_nodes+latent_dim*2) + data_input_len*(self.num_data_encoder_tokens +  latent_dim*2) + output_len*((2*latent_dim)*2 + eq_nodes)
+
+        # for single layer with n nodes and previous layer of m nodes,
+        # there are m-1 additions for each of the n nodes. Thus, (m-1)*n
+        additions_in_model = lambda eq_input_len, data_input_len: eq_input_len*((eq_nodes-1)*latent_dim + 3*latent_dim*(latent_dim-1)) + data_input_len*((self.num_data_encoder_tokens-1)*latent_dim + 3*latent_dim*(latent_dim-1)) + (3*(2*latent_dim-1)*(2*latent_dim) + (2*latent_dim-1)*eq_nodes)*output_len
+
+        weights_in_eq_encoder = lambda eq_input_len: eq_input_len*(eq_nodes*latent_dim + 3*latent_dim**2) 
+        weights_in_data_encoder = lambda data_input_len: data_input_len*(self.num_data_encoder_tokens*latent_dim + 3*latent_dim**2)
+        weights_in_decoder = (output_len)*(3*(2*latent_dim)**2 + (2*latent_dim)*eq_nodes)
+ 
+        weights_per_eval = lambda eq_input_len, data_input_len: weights_in_eq_encoder(eq_input_len) + weights_in_data_encoder(data_input_len) + weights_in_decoder
+
+        self.computes_in_eval = lambda eq_input_len, data_input_len: weights_per_eval(eq_input_len, data_input_len) + activations_in_model(eq_input_len, data_input_len) + additions_in_model(eq_input_len, data_input_len)
 
         return model
 
 
-    def read_decoded_output(self, outputs):
+    def read_decoded_output(self, outputs, const_outputs=None):
         """Get tokenized output as a string. That is, convert
         the output of the neural network -- softmaxed list of values
         -- to a string of tokens that should represent an equation
@@ -163,17 +216,34 @@ class seq2seq():
          : str
             Returns a string that is a lisp without the paraenthesis.
         """
-        
+
         decoded_string_list = ['START']
 
-        for o in outputs[0]:
-            i = np.argmax(o)
-            token = self.target_index_token[i]
+        if self.use_constants:
 
-            if token == 'STOP':
-                break
+            for o, c in zip(outputs[0], const_outputs[0]):
+                i = np.argmax(o)
+                token = self.target_index_token[i]
 
-            decoded_string_list.append(token)
+                if token == '#f':
+                    token = str(c[0])
+
+                if token == 'STOP':
+                    break
+
+                decoded_string_list.append(token)
+
+        else:
+
+            for o in outputs[0]:
+                i = np.argmax(o)
+                token = self.target_index_token[i]
+
+                if token == 'STOP':
+                    break
+
+                decoded_string_list.append(token)
+
 
         return ' '.join(decoded_string_list)
 
@@ -222,9 +292,20 @@ class seq2seq():
             that will be input into the equation encoder.
         """
 
-        eq_encoder_input_data = np.array([[self.target_token_onehot[node] for node in f_hat_seq]])
+        eq_encoder_input_data = []
 
-        return eq_encoder_input_data
+        for node in f_hat_seq:
+
+            if node in self.target_token_onehot:
+                eq_encoder_input_data.append(self.target_token_onehot[node])
+
+            else:   # node is a the string of a number
+                input_vec = self.target_token_onehot['#f']
+                index = self.target_token_index['const_value']
+                input_vec[index] = float(node)
+                eq_encoder_input_data.append(input_vec)
+
+        return np.array([eq_encoder_input_data])
 
 
     def get_decoder_input_data(self):
@@ -242,7 +323,8 @@ class seq2seq():
     def evaluate(self, x, y, f_hat, f_hat_seq,
                  return_equation=False,
                  return_equation_str=False,
-                 return_decoded_list=False):
+                 return_decoded_list=False,
+                 return_fitnesses=False):
 
         fitness_sum = 0
         fitnesses = []
@@ -298,11 +380,21 @@ class seq2seq():
                 current_momement_score = float('inf')  
 
             if current_momement_score > fitness:
-                    current_momement_score = fitness 
+                    current_momement_score = fitness
 
-        output['fitness_sum'] = fitness_sum 
-        output['fitnesses'] = fitnesses
+        if not return_equation:
+            del output['equation']
+
+        if not return_decoded_list:
+            del output['decoded_list']
+            del output['raw_decoded_list']
+
+        if return_fitnesses:
+            output['fitnesses'] = fitnesses
+
+        output['fitness_sum'] = fitness_sum
         output['fitness_best'] = fitness_best
+
         return output
 
 
@@ -315,22 +407,37 @@ class seq2seq():
 
         data_encoder_input_data = self.get_data_encoder_input_data(x, y, f_hat)
         eq_encoder_input_data = self.get_eq_encoder_input_data(f_hat_seq)
-
         decoder_input_data = self.get_decoder_input_data()
 
         prediction = self.model.predict([initial_states, data_encoder_input_data, eq_encoder_input_data, decoder_input_data])
 
+        self.FLoPs += self.computes_in_eval(eq_input_len=len(eq_encoder_input_data[0]), 
+                                            data_input_len=len(data_encoder_input_data[0]))
+
         if self.options['use_k-expressions']:
 
-            # Don't pick terminals in the tail
-            for i, row in enumerate(prediction[0]):
-                if i >= self.head_length:
-                    prediction[0, i, self.terminal_indices] += 2.
-                else:
-                    prediction[0, i, self.not_start_indices] += 2.
+            if self.use_constants:
+                # Don't pick terminals in the tail
+                for i, row in enumerate(prediction[0][0]):
+                    if i >= self.head_length:
+                        prediction[0][0, i, self.terminal_indices] += 2.
+                    else:
+                        prediction[0][0, i, self.not_start_indices] += 2.
+
+            else:
+                # Don't pick terminals in the tail
+                for i, row in enumerate(prediction[0]):
+                    if i >= self.head_length:
+                        prediction[0, i, self.terminal_indices] += 2.
+                    else:
+                        prediction[0, i, self.not_start_indices] += 2.
 
         # decoded in terms of seq2seq model -- still a k-expression
-        decoded_string = self.read_decoded_output(prediction)
+        if self.use_constants:
+            decoded_string = self.read_decoded_output(prediction[0], prediction[1])
+
+        else:
+            decoded_string = self.read_decoded_output(prediction)
 
         decoded_list = decoded_string.split(' ')
         
@@ -447,7 +554,7 @@ class seq2seq():
         """
 
         try:
-            t = GP.Tree(rng=None, primitive_set=self.primitive_set, terminal_set=self.terminal_set,
+            t = GP.Tree(rng=self.rng, primitive_set=self.primitive_set, terminal_set=self.terminal_set,
                         tree=eq, actual_lisp=True)
             f = eval('lambda x:' + t.convert_lisp_to_standard_for_function_creation())
             f([1])
@@ -566,7 +673,6 @@ class seq2seq():
 
     @staticmethod
     def get_num_weights(model):
-
         # get number of weights
         num_weights = 0
         for layer in model.layers:

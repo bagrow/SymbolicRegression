@@ -7,9 +7,10 @@ import os
 
 class CmaesTrainsNn():
 
-	def __init__(self, exp, rep, model, x_train, Y_train,
+	def __init__(self, exp, rep, model, X_train, Y_train,
 				 x_val, y_val, x_test, y_test,
-				 test_dataset_name,
+				 test_dataset_name, multi_targets,
+				 shuffle_x,
 				 timelimit, options=None):
 		"""Initialize class with a model to train
 		and data to train it on. We would like to 
@@ -19,7 +20,7 @@ class CmaesTrainsNn():
 		----------
 		model : Seq2Seq
 			The model that will be trained by CMA-ES
-		x_train : np.array
+		X_train : np.array
 			The input data to f.
 		Y_train : np.array
 			The output data to f.
@@ -36,6 +37,9 @@ class CmaesTrainsNn():
 			in the name of the output files.
 		"""
 
+		self.multi_targets = multi_targets
+		self.shuffle_x = shuffle_x
+
 		if options is None:
 			self.options = {'use_k-expressions': False}
 
@@ -51,10 +55,11 @@ class CmaesTrainsNn():
 		
 		self.model = model
 
-		self.x_train = x_train
+		self.X_train = X_train
 		self.Y_train = Y_train
 		self.target_index = 0
 		self.y_train = Y_train[self.target_index]
+		self.x_train = X_train[self.target_index]
 		self.target_index += 1
 
 		self.x_val = x_val
@@ -161,20 +166,47 @@ class CmaesTrainsNn():
 
 					self.model.set_weights(model=self.model.model, weights=w)
 
-					output = self.model.evaluate(self.x_train, self.y_train,
-												 initial_f_hat, initial_f_hat_seq,
-												 return_equation=True,
-												 return_decoded_list=True)
+					if self.multi_targets:
+
+						output_avg = {}
+
+						for x, y in zip(self.X_train, self.Y_train):
+
+							self.rng.shuffle(x)
+
+							output = self.model.evaluate(x, y,
+												 		 initial_f_hat, initial_f_hat_seq)
+
+							for key in output:
+								if key in output_avg:
+									output_avg[key] += output[key]
+								else:
+									output_avg[key] = output[key]
+
+						for key in output_avg:
+							output_avg[key] = output_avg[key]/len(self.Y_train)
+
+					else:
+
+						self.rng.shuffle(self.x_train)
+
+						output = self.model.evaluate(self.x_train, self.y_train,
+													 initial_f_hat, initial_f_hat_seq,
+													 return_equation=True,
+													 return_decoded_list=True)
 
 
 					# fitnesses.append(output['fitness_sum'])
 					fitnesses.append(output['fitness_best'])
 
+					self.rng.shuffle(self.x_val)
+
 
 					val_output = self.model.evaluate(self.x_val, self.y_val,
 												 initial_f_hat, initial_f_hat_seq,
 												 return_equation=True,
-												 return_decoded_list=True)
+												 return_decoded_list=True,
+												 return_fitnesses=True)
 
 					# val_fitnesses.append(val_output['fitness'])
 					val_fitnesses.append(val_output['fitness_best'])
@@ -211,10 +243,13 @@ class CmaesTrainsNn():
 				# save best individuals during training
 				self.model.set_weights(weights=self.best[1], model=self.model.model)
 
+				self.rng.shuffle(self.x_test)
+
 				output = self.model.evaluate(self.x_test, self.y_test,
 											 initial_f_hat, initial_f_hat_seq,
 											 return_equation=True,
-											 return_decoded_list=True)
+											 return_decoded_list=True,
+											 return_fitnesses=True)
 
 				best_individual_data.append([gen,
 											 self.target_index,
@@ -232,19 +267,21 @@ class CmaesTrainsNn():
 				if max_FLoPs < self.model.FLoPs:
 					break
 
-				if self.model.FLoPs - FLoPs_checkpoint > max_FLoPs/len(self.Y_train):
+				if not self.multi_targets:
+					if self.model.FLoPs - FLoPs_checkpoint > max_FLoPs/len(self.Y_train):
 
-					self.y_train = self.Y_train[self.target_index]
+						self.y_train = self.Y_train[self.target_index]
+						self.x_train = self.X_train[self.target_index]
 
-					self.target_index += 1
-					
-					FLoPs_checkpoint += max_FLoPs/len(self.Y_train)
-					print('changing target')
+						self.target_index += 1
+						
+						FLoPs_checkpoint += max_FLoPs/len(self.Y_train)
+						print('changing target')
 
-					# At this point, it would be ideal if self.model.FLoPs is
-					# equal to FLoPs_checkpoint to allow roughly equal compute
-					# between targets. So, we cheat and reselt self.model.FLoPs
-					self.model.FLoPs = FLoPs_checkpoint
+						# At this point, it would be ideal if self.model.FLoPs is
+						# equal to FLoPs_checkpoint to allow roughly equal compute
+						# between targets. So, we cheat and reselt self.model.FLoPs
+						self.model.FLoPs = FLoPs_checkpoint
 
 			es.result_pretty()
 

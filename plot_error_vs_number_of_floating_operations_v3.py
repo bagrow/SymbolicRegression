@@ -339,12 +339,13 @@ def plot_confidence_interval(x_data, y_data, color='C0', label=None):
 # plt.show()
 # exit()
 
+plot_train_switch = False
 train_switch_step = 2*10**9
 # num_train_switches = 5
 max_train_switches = 10**10
 
 # experiment number
-exp = 10
+exp = 20
 
 # number of runs (repetitions)
 nreps = 30
@@ -357,13 +358,15 @@ num_train_targets = 5
 # Bonferroni correction is applied since we
 # compare equation engineer to GP and to 
 # semantic GP.
-sig_level = 0.05/2
+sig_level = 0.05
 
 # Flags to include gp and semantic gp in the
 # plots, or not.
 equation_engineer = True
 genetic_programming = True
-semantic_genetic_programming = True
+semantic_genetic_programming = False
+
+all_at_once = True
 
 base_data_path = os.path.join(os.environ['EE_DATA'], 'experiment'+str(exp))
 
@@ -388,10 +391,15 @@ bold_rows = []
 
 # function_names = ['quartic', 'septic', 'nonic', 'keijzer11', 'keijzer12', 'keijzer13', 'keijzer14',
 #                   'keijzer15', 'r1', 'r2', 'r3']
-function_names = ['koza1']
+# function_names = ['koza1']
+function_names = ['Nguyen-4', 'Koza-1', 'Koza-2', 'Koza-3', 'Nguyen-1', 'Nguyen-3']
+
+# fig, axes = plt.subplots(ncols=2, nrows=3, sharey=True, sharex=True)
+
+# axes = axes.flatten()
 
 # loop through the test functions
-for test_function_name in function_names:        
+for test_index, test_function_name in enumerate(function_names):      
 
     print('test function', test_function_name)
 
@@ -446,7 +454,13 @@ for test_function_name in function_names:
                 path_gp = os.path.join(base_data_path, 'gp')
 
                 # Read the data
-                df_gp = pd.read_csv(os.path.join(path_gp, 'best_fitness_data_rep'+str(rep)+'_train'+str(train_target_num)+'.csv'))
+                if all_at_once:
+                    thing = None if test_index == 0 else test_index
+                    df_gp = pd.read_csv(os.path.join(path_gp, 'best_fitness_data_rep'+str(rep)+'_train_all_at_once_test_index'+str(thing)+'.csv'))
+
+
+                else:
+                    df_gp = pd.read_csv(os.path.join(path_gp, 'best_fitness_data_rep'+str(rep)+'_train'+str(train_target_num)+'.csv'))
 
                 # Since the GP runs are stored separately, the restart the floating op
                 # count. So we need to keep track up it in this script.
@@ -548,7 +562,7 @@ for test_function_name in function_names:
             # switching here. Thus, no for loop. But, the training and test information is split
             # between two different files. Let's start with the training.
             # df_ee = pd.read_csv(os.path.join(path_ee, 'best_ind_rep'+str(rep)+'_'+test_function_name+'.csv'))
-            df_ee = pd.read_csv(os.path.join(path_ee, 'best_ind_rep'+str(rep)+'_test.csv'))
+            df_ee = pd.read_csv(os.path.join(path_ee, 'best_ind_rep'+str(rep)+'_test_index'+str(test_index)+'.csv'))
 
 
             # Get data from training period.
@@ -640,7 +654,6 @@ for test_function_name in function_names:
         x, y = plot_confidence_interval(floating_ops_sgp_all, train_error_sgp_all, color='C2', label='Semantic GP')
 
 
-
     switches = np.arange(0, max_train_switches+1, train_switch_step)
     x = []
     y = []
@@ -650,9 +663,10 @@ for test_function_name in function_names:
         plt.figure(fig_name)
         ylim = plt.ylim()
 
-        for s in switches:
+        if plot_train_switch:
+            for s in switches:
 
-            plt.plot([s]*2, ylim, '--k', zorder=0, label='Training Switch')
+                plt.plot([s]*2, ylim, '--k', zorder=0, label='Training Switch')
 
         # Remove duplicat labels in the legend.
         handles, labels = plt.gca().get_legend_handles_labels()
@@ -661,7 +675,7 @@ for test_function_name in function_names:
 
         # Additional plot details
         plt.title(test_function_name+' '+fig_name)
-        plt.xlabel('Number of Floating Point Operations')
+        plt.xlabel('FLoPs')
         plt.ylabel(fig_name.title()+' Error')
         # plt.yscale('log')
 
