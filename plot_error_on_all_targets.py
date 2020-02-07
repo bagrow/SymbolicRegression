@@ -114,13 +114,14 @@ for test_index, test_function_name in enumerate(function_names):
         floating_ops_ee_all[test_function_name].append(floating_ops_ee)
 
 plt.close('all')
-fig, axes = plt.subplots(nrows=2, ncols=3,
-                         figsize=(7.5, 7.5*4.8/6.4),
+a = 1.2
+fig, axes = plt.subplots(nrows=3, ncols=2,
+                         figsize=(3.75*a, 5*a),
                          sharey=True, sharex=True)
 
 axes = np.array(axes).flatten()
 
-ordered_function_names = ['Koza-1', 'Koza-2', 'Koza-3', 'Nguyen-1', 'Nguyen-3', 'Nguyen-4']
+ordered_function_names = ['Koza-1', 'Nguyen-1', 'Koza-2', 'Nguyen-3', 'Koza-3', 'Nguyen-4']
 
 color_dict = {'Koza-1': 'C3',
               'Koza-2': 'C5',
@@ -170,12 +171,13 @@ labels = color_dict.keys()
 colors = color_dict.values()
 custom_lines = [plt.Line2D([0], [0], color=c) for c in colors]
 fig.legend(custom_lines, labels,
-           ncol=7, handlelength=1,
+           ncol=4, handlelength=1,
            handletextpad=0.4, labelspacing=0.25,
            columnspacing=1.3,
-           loc='center', bbox_to_anchor=(0.535, 0.97))
+           loc='center', bbox_to_anchor=(0.555, 0.96),
+           fontsize=8)
 
-plt.subplots_adjust(bottom=0.12, left=0.09, right=0.98, top=0.93)
+plt.subplots_adjust(bottom=0.12, left=0.13, right=0.98, top=0.92)
 fig.text(0.02, 0.5, 'Error', ha='center', va='center', rotation=90)
 fig.text(0.535, 0.02, 'Computational effort (Num. operations)', ha='center', va='center')
 # plt.tight_layout()

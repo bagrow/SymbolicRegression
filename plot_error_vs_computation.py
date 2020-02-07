@@ -274,6 +274,7 @@ for function_name in ['quartic', 'septic',
 
         plt.xlabel('Computation = (CPU Time) $\\times$ (cycles per second)')
         plt.ylabel('Test Error + $10^{-16}$')
+<<<<<<< Updated upstream
 
     plt.title(function_name)
 
@@ -281,6 +282,10 @@ for function_name in ['quartic', 'septic',
     by_label = OrderedDict(zip(labels, handles))
     plt.legend(by_label.values(), by_label.keys())
 
+=======
+    plt.legend(['ea', 'gp', 'semantic_gp'])
+    # plt.show()
+>>>>>>> Stashed changes
     plt.savefig(os.path.join(os.environ['GP_DATA'], 'equation_adjuster', 'experiment'+str(exp), 'figures', 'ea_gp_comp_'+function_name+'.pdf'))
 
     # compare (p-value) test values at max computation for EA

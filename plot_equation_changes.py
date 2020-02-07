@@ -2,6 +2,13 @@ import matplotlib
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 
+import matplotlib.pylab as pylab
+params = {#'legend.fontsize': 'x-large',
+          # 'figure.figsize': (15, 5),
+         # 'axes.labelsize': 'x-large',
+         'axes.titlesize':'small',}
+pylab.rcParams.update(params)
+
 import general_plotting.plotting as gpp
 import general_plotting.data_manipulation as gpdm
 
@@ -116,13 +123,14 @@ for test_index, test_function_name in enumerate(function_names):
 
 
 plt.close('all')
-fig, axes = plt.subplots(nrows=2, ncols=3,
-                         figsize=(7.5, 7.5*4.8/6.4),
+a = 1.2
+fig, axes = plt.subplots(nrows=3, ncols=2,
+                         figsize=(3.75*a, 5*a),
                          sharey=True, sharex=True)
 
 axes = np.array(axes).flatten()
 
-ordered_function_names = ['Koza-1', 'Koza-2', 'Koza-3', 'Nguyen-1', 'Nguyen-3', 'Nguyen-4']
+ordered_function_names = ['Koza-1', 'Nguyen-1', 'Koza-2', 'Nguyen-3', 'Koza-3', 'Nguyen-4']
 
 for i, test_function_name in enumerate(ordered_function_names):
 
@@ -133,40 +141,42 @@ for i, test_function_name in enumerate(ordered_function_names):
     x, y = gpp.plot_average(floating_ops_ee_all[test_function_name], unique_counts[test_function_name], color='C3', label='Unique')
 
     # Additional plot details
-    plt.title(test_function_name)
+    plt.title(test_function_name, fontsize=8)
 
     # if i > 2:
     #     plt.xlabel('FLoPs')
 
     if i == 0:
-        plt.legend(loc='center left')
+        plt.legend(loc='center left', handlelength=1, fontsize=8)
 
     # plt.ylim(bottom=0)
     plt.xticks([i*10**10 for i in range(6)])
 
-plt.subplots_adjust(bottom=0.12, left=0.09, right=0.98, top=0.95, wspace=0.05, hspace=0.15)
-gpp.figure_ylabel(fig, 'Average number of equations')
+plt.subplots_adjust(bottom=0.12, left=0.15, right=0.98, top=0.9, wspace=0.05, hspace=0.25)
+fig.text(0.02, 0.5, 'Average number of equations', ha='center', va='center', rotation=90)
+
 fig.text(0.5, 0.02, 'Computational effort (Num. operations)', ha='center', va='center')
 # plt.tight_layout()
 plt.savefig(os.path.join(save_path, 'plot_equation_changes.pdf'))
 
-fig, axes = plt.subplots(nrows=2, ncols=3,
-                         figsize=(7.5, 7.5*4.8/6.4),
-                         sharey=True, sharex=True)
+# fig, axes = plt.subplots(nrows=2, ncols=3,
+#                          figsize=(3.75, 3.75*3/2),
+#                          sharey=True, sharex=True)
 
-axes = np.array(axes).flatten()
+# axes = np.array(axes).flatten()
 
-for i, test_function_name in enumerate(ordered_function_names):
+# for i, test_function_name in enumerate(ordered_function_names):
 
-    plt.sca(axes[i])
+#     plt.sca(axes[i])
 
-    fraction_counts = [u/t for u, t in zip(unique_counts[test_function_name], total_counts[test_function_name])]
+#     fraction_counts = [u/t for u, t in zip(unique_counts[test_function_name], total_counts[test_function_name])]
 
-    x, y = gpp.plot_confidence_interval(floating_ops_ee_all[test_function_name], fraction_counts, color='C2', label='Fraction')
+#     x, y = gpp.plot_confidence_interval(floating_ops_ee_all[test_function_name], fraction_counts, color='C2', label='Fraction')
 
-    plt.title(test_function_name)
+#     plt.title(test_function_name, fontsize='small')
 
-# plt.ylim([0, 1])
-plt.tight_layout()
-plt.savefig(os.path.join(save_path, 'plot_equation_changes_fraction.pdf'))
+
+# # plt.ylim([0, 1])
+# # plt.tight_layout()
+# plt.savefig(os.path.join(save_path, 'plot_equation_changes_fraction.pdf'))
 
