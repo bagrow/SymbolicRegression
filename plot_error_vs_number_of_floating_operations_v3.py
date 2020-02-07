@@ -19,7 +19,7 @@ train_switch_step = 2*10**9
 # num_train_switches = 5
 max_train_switches = 10**10
 
-single_target_plot = True
+single_target_plot = False
 
 alg_name = 'TLC-SR'
 
@@ -313,21 +313,21 @@ gpdm.write_table_with_bold_rows(df=table, filename=os.path.join(stats_save_path,
 
 
 plt.close('all')
-width = 3.75
+width = 7.5
 print((width, width*4.8/6.4))
-height = 5
+# height = 5
 if single_target_plot:
     height = 4.5
 else:
     height = 5
-a = 1.2
-fig, axes = plt.subplots(nrows=3, ncols=2,
+a = 1.0
+fig, axes = plt.subplots(nrows=2, ncols=3,
                          figsize=(width*a, height*a),
                          sharey='row', sharex=True)
 
 axes = np.array(axes).flatten()
 
-ordered_function_names = ['Koza-1', 'Nguyen-1', 'Koza-2', 'Nguyen-3', 'Koza-3', 'Nguyen-4']
+ordered_function_names = ['Koza-1', 'Koza-2', 'Koza-3', 'Nguyen-1', 'Nguyen-3', 'Nguyen-4']
 
 for i, test_function_name in enumerate(ordered_function_names):
 
@@ -413,8 +413,7 @@ for i, test_function_name in enumerate(ordered_function_names):
             handles, labels = plt.gca().get_legend_handles_labels()
             by_label = OrderedDict(zip(labels, handles))
             plt.legend(by_label.values(), by_label.keys(), loc=loc,
-                       handlelength=1,
-                       fontsize=8)
+                       handlelength=1)
 
     else:
         if i == 0:
@@ -424,8 +423,7 @@ for i, test_function_name in enumerate(ordered_function_names):
             handles, labels = plt.gca().get_legend_handles_labels()
             by_label = OrderedDict(zip(labels, handles))
             plt.legend(by_label.values(), by_label.keys(), loc=loc,
-                       handlelength=1,
-                       fontsize=8)
+                       handlelength=1)
 
     # Additional plot details
     # plt.title(test_function_name)
@@ -449,12 +447,11 @@ for i, test_function_name in enumerate(ordered_function_names):
 
         plt.gca().text(.5, pval_yscale, '$p$('+alg_name+' < GP) '+pval_cond,
                        horizontalalignment='center',
-                       transform=plt.gca().transAxes,
-                       fontsize=8)
+                       transform=plt.gca().transAxes)
 
 plt.subplots_adjust(wspace=0.05, hspace=0.05)
 
-plt.subplots_adjust(left=0.15, right=0.99, top=0.98)
+plt.subplots_adjust(left=0.08, right=0.99, top=0.98)
 
 if single_target_plot:
     plt.subplots_adjust(bottom=0.13)
