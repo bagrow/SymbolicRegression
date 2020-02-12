@@ -8,6 +8,9 @@ from keras import backend as K
 from keras.utils import to_categorical
 
 import numpy as np
+import pandas as pd
+
+import itertools
 
 class seq2seq():
 
@@ -113,8 +116,10 @@ class seq2seq():
         
         # We discard `encoder_outputs` and only keep the states.
         # encoder_states = [state_h, state_c]
-        encoder_states_layer1 = K.concatenate((data_state_h1, eq_state_h1), axis=-1)
-        encoder_states_layer2 = K.concatenate((data_state_h2, eq_state_h2), axis=-1)
+        encoder_states_layer1 = Lambda(lambda cat_list: K.concatenate((cat_list[0], cat_list[1]), axis=1))([data_state_h1, eq_state_h1])
+        # K.concatenate((data_state_h1, eq_state_h1), axis=-1)
+        encoder_states_layer2 = Lambda(lambda cat_list: K.concatenate((cat_list[0], cat_list[1]), axis=1))([data_state_h2, eq_state_h2])
+        # K.concatenate((data_state_h2, eq_state_h2), axis=-1)
 
         # Set up the decoder, which will only process one timestep at a time.
         decoder_inputs = Input(shape=(1, self.num_decoder_tokens))
@@ -460,7 +465,10 @@ class seq2seq():
                                        primitive_set=self.primitive_set,
                                        terminal_set=self.terminal_set)
 
-        if 'START' not in decoded_list:
+        if np.any(np.isnan(prediction)):
+            fitness = float('inf')
+
+        elif 'START' not in decoded_list:
 
             if self.options['use_k-expressions']:
 
@@ -484,6 +492,8 @@ class seq2seq():
                                       tree=lisp, actual_lisp=True)
                     t.evaluate_fitness([np.vstack((y,x)).T], compute_val_error=False)
                     fitness = t.fitness[0]
+            else:
+                print('lisp is None! what!?')
 
         output = {'fitness': fitness}
 
@@ -679,13 +689,49 @@ class seq2seq():
             layer_weights = layer.get_weights()
 
             # Things like input layer have length 0.
+            # if len(layer_weights) > 0:
+            #     num_weights += np.prod(layer_weights[0].shape)
+
+            #     if len(layer_weights) == 3:
+            #         num_weights += np.prod(layer_weights[1].shape)
             if len(layer_weights) > 0:
-                num_weights += np.prod(layer_weights[0].shape)
-
-                if len(layer_weights) == 3:
-                    num_weights += np.prod(layer_weights[1].shape)
-
+                for lw in layer_weights:
+                    num_weights += np.prod(lw.shape)
         return num_weights
+
+
+    # @staticmethod
+    # def save_model_weights(model, save_loc):
+
+    #     flattened_weights = []
+    #     for layer in model.layers:
+    #         layer_weights = layer.get_weights()
+
+    #         # Things like input layer have length 0.
+    #         if len(layer_weights) > 0:
+    #             flattened_weights.extend(layer_weights[0].flatten())
+
+    #             if len(layer_weights) == 3:
+    #                 flattened_weights.extend(layer_weights[1].flatten())
+
+    #     flattened_weights = np.array(flattened_weights, dtype=np.float64)
+
+    #     pd.DataFrame(flattened_weights).to_csv(save_loc, index=False, header=None)
+
+
+    # @staticmethod
+    # def load_model_weights(model, save_loc):
+
+    #     flattened_weights = pd.read_csv(save_loc,
+    #                                     header=None,
+    #                                     dtype=np.float64).iloc[:,:].values
+
+    #     print(flattened_weights)
+
+    #     # set weights
+    #     model.set_weights(flattened_weights, model.model)
+
+    #     print(model.model.get_weights())
 
 
 if __name__ == '__main__':

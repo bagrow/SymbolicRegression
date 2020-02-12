@@ -298,7 +298,7 @@ class CmaesTrainsNn():
 		df = pd.DataFrame(pop_data_summary, columns=['Generation', 'Mean Training Error', 'Mean Validation Error'])
 		df.to_csv(os.path.join(save_loc, 'pop_data_summary_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
 
-		self.best[2].save(os.path.join(save_loc, 'best_ind_model_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'))
+		self.best[2].save_weights(os.path.join(save_loc, 'best_ind_model_weights_rep'+str(self.rep)+'_'+self.test_dataset_name+'.h5'))
 
 if __name__ == '__main__':
 
