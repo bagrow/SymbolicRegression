@@ -123,7 +123,7 @@ axes = np.array(axes).flatten()
 
 ordered_function_names = ['Koza-1', 'Nguyen-1', 'Koza-2', 'Nguyen-3', 'Koza-3', 'Nguyen-4']
 
-color_dict = {'Koza-1': 'C3',
+color_dict = {'Koza-1': 'C2',
               'Koza-2': 'C5',
               'Koza-3': 'C6',
               'Nguyen-1': 'C7',

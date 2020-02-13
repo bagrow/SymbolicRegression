@@ -18,7 +18,8 @@ parser.add_argument('rep', help='Number of runs already performed', type=int)
 parser.add_argument('exp', help='Experiment number. Used in save location', type=int)
 parser.add_argument('--use_kexpressions', action='store_true')
 parser.add_argument('--genetic_programming', action='store_true')
-parser.add_argument('--multi_targets', action='store_true')
+parser.add_argument('--single_target', action='store_true')
+parser.add_argument('--simultaneous_targets', action='store_true')
 parser.add_argument('--use_constants', action='store_true')
 parser.add_argument('--inconsistent_x', action='store_true')
 parser.add_argument('--shuffle_x', action='store_true')
@@ -29,6 +30,8 @@ args = parser.parse_args()
 print(args)
 
 assert args.test_index is not None, 'Must use --test_index'
+
+assert (args.simultaneous_targets and args.single_target) == False, 'Cannot use --simultaneous_targets and --single_target at the same time'
 
 if args.use_kexpressions:
     options = {'use_k-expressions': True,
@@ -78,14 +81,16 @@ if args.inconsistent_x:
 else:
     gen_x_values = lambda: np.linspace(-1, 1, 20)
 
-X_train = [gen_x_values()[None, :] for _ in range(len(functions))]
-Y_train = [f(x) for x, f in zip(X_train, functions)]
+if not args.single_target:
 
-x_val = gen_x_values()[None, :]
-f_val = lambda x: x[0]**4 + x[0]
-y_val = f_val(x_val)
+    X_train = [gen_x_values()[None, :] for _ in range(len(functions))]
+    Y_train = [f(x) for x, f in zip(X_train, functions)]
 
-x_test = gen_x_values()[None, :]
+    x_val = gen_x_values()[None, :]
+    f_val = lambda x: x[0]**4 + x[0]
+    y_val = f_val(x_val)
+
+    x_test = gen_x_values()[None, :]
 
 if args.use_benchmarks:
 
@@ -95,17 +100,27 @@ if args.use_benchmarks:
 
 else:
 
-    test_function_strs = ['x[0]**4 + x[0]**3 + x[0]**2 + x[0]',   # Koza-1
+    test_function_strs = ['x[0]**6 + x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]' # Nguyen-4
+                          'x[0]**4 + x[0]**3 + x[0]**2 + x[0]',   # Koza-1
                           'x[0]**5 - 2*x[0]**3 + x[0]',   # Koza-2
                           'x[0]**6 - 2*x[0]**4 + x[0]**2',    # Koza-3
                           'x[0]**3 + x[0]**2 + x[0]', # Nguyen-1
                           'x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]', # Nguyen-3
-                          'x[0]**6 + x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]' #Nguyen-4
                          ]
 
     assert 0 <= args.test_index < len(test_function_strs), '--test_index must be between 0 and '+str(len(test_function_strs)-1)
 
     f_test = eval('lambda x: '+test_function_strs[args.test_index])
+
+if args.single_target:
+
+    X_train = [np.array(sorted(np.random.uniform(-1, 1, size=20)))[None, :]]
+    Y_train = [f_test(x) for x in X_train]
+
+    x_val = np.array(sorted(np.random.uniform(-1, 1, size=20)))[None, :]
+    y_val = f_test(x_val)
+
+    x_test = np.array(sorted(np.random.uniform(-1, 1, size=20)))[None, :]
 
 y_test = f_test(x_test)
 
@@ -114,11 +129,14 @@ exp = args.exp
 
 max_compute = 5*2*10**9
 
+if args.single_target:
+    max_compute *= 5
+
 rng = np.random.RandomState(args.rep+100*args.exp)
 
 if args.genetic_programming:
 
-    if args.multi_targets:
+    if args.simultaneous_targets:
 
         train_dataset = []
 
@@ -144,7 +162,7 @@ if args.genetic_programming:
 
         gp = GP.GeneticProgrammingAfpo(rng=rng,
                                        pop_size=100,
-                                       max_gens=60000,
+                                       max_gens=600000,
                                        primitive_set=primitive_set,
                                        terminal_set=terminal_set,
                                        data=dataset,
@@ -180,7 +198,7 @@ if args.genetic_programming:
             dataset = [train_dataset, val_dataset]
             test_data = test_dataset
 
-            output_file = 'fitness_data_rep' + str(args.rep) + '_train'+str(i)+'_test_index'+str(args.test_index)+'.csv'
+            output_file = 'fitness_data_rep' + str(args.rep) + '_train'+str(args.test_index)+'_test_index'+str(args.test_index)+'.csv'
 
             num_vars = 1
 
@@ -188,7 +206,7 @@ if args.genetic_programming:
 
             gp = GP.GeneticProgrammingAfpo(rng=rng,
                                            pop_size=100,
-                                           max_gens=60000,
+                                           max_gens=600000,
                                            primitive_set=primitive_set,
                                            terminal_set=terminal_set,
                                            data=dataset,
@@ -217,7 +235,7 @@ else:
                            x_val=x_val, y_val=y_val,
                            x_test=x_test, y_test=y_test, test_dataset_name='test_index'+str(args.test_index),
                            timelimit=timelimit,
-                           multi_targets=args.multi_targets,
+                           simultaneous_targets=args.simultaneous_targets,
                            shuffle_x=args.shuffle_x,
                            options=options)
 

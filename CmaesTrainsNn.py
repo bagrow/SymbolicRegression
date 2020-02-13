@@ -9,7 +9,7 @@ class CmaesTrainsNn():
 
 	def __init__(self, exp, rep, model, X_train, Y_train,
 				 x_val, y_val, x_test, y_test,
-				 test_dataset_name, multi_targets,
+				 test_dataset_name, simultaneous_targets,
 				 shuffle_x,
 				 timelimit, options=None):
 		"""Initialize class with a model to train
@@ -37,7 +37,7 @@ class CmaesTrainsNn():
 			in the name of the output files.
 		"""
 
-		self.multi_targets = multi_targets
+		self.simultaneous_targets = simultaneous_targets
 		self.shuffle_x = shuffle_x
 
 		if options is None:
@@ -68,7 +68,7 @@ class CmaesTrainsNn():
 		self.x_test = x_test
 		self.y_test = y_test
 
-		self.best = (float('inf'), None, None, None, None)
+		self.best = (float('inf'), None, None, None, None, None)
 
 		self.test_dataset_name = test_dataset_name
 		self.timelimit = timelimit
@@ -140,12 +140,21 @@ class CmaesTrainsNn():
 
 		best_individual_data = [['Generation',
 								 'Target Index',
-								 'Train Error Sum',
+								 'Train Error Average',
+								 # Train errors by themselves go here
 								 'Validation Error',
 								 'Test Error',
 								 'Number of Unique Validation Errors',
 								 'Number of Validation Errors',
 								 'Number of Floating Point Operations']]
+
+		if len(self.X_train) > 1 and self.simultaneous_targets:
+
+			for i, _ in enumerate(self.X_train):
+
+				best_individual_data[0].insert(3+i, 'Train Error '+str(i))
+
+
 		FLoPs_checkpoint = 0
 
 		while max_FLoPs >= self.model.FLoPs:
@@ -160,15 +169,16 @@ class CmaesTrainsNn():
 				val_fitnesses = []
 				num_unique_fitnesses = []
 				num_fitnesses = []
+				individual_fitnesses = []
 
 				# evaluate solutions (weights)
 				for w in solutions:
 
 					self.model.set_weights(model=self.model.model, weights=w)
 
-					if self.multi_targets:
+					if self.simultaneous_targets:
 
-						output_avg = {}
+						individual_fitness_row = []
 
 						for x, y in zip(self.X_train, self.Y_train):
 
@@ -177,14 +187,12 @@ class CmaesTrainsNn():
 							output = self.model.evaluate(x, y,
 												 		 initial_f_hat, initial_f_hat_seq)
 
-							for key in output:
-								if key in output_avg:
-									output_avg[key] += output[key]
-								else:
-									output_avg[key] = output[key]
+							individual_fitness_row.append(output['fitness_best'])
 
-						for key in output_avg:
-							output_avg[key] = output_avg[key]/len(self.Y_train)
+						individual_fitnesses.append(individual_fitness_row)
+
+						# for key in output_avg:
+						# 	output_avg[key] = output_avg[key]/len(self.Y_train)
 
 					else:
 
@@ -196,8 +204,12 @@ class CmaesTrainsNn():
 													 return_decoded_list=True)
 
 
-					# fitnesses.append(output['fitness_sum'])
-					fitnesses.append(output['fitness_best'])
+					if len(self.X_train) > 1 and self.simultaneous_targets:
+						fitnesses.append(np.mean(individual_fitness_row))
+
+					else:
+						# fitnesses.append(output['fitness_sum'])
+						fitnesses.append(output['fitness_best'])
 
 					self.rng.shuffle(self.x_val)
 
@@ -227,12 +239,16 @@ class CmaesTrainsNn():
 
 				if val_fitnesses[best_index] <= self.best[0]:
 					self.model.set_weights(weights=solutions[best_index], model=self.model.model)
+					
+					# This should be a dictionary for clarity.
 					self.best = (val_fitnesses[best_index],
 						         solutions[best_index],
 						         self.model.model,
 						         fitnesses[best_index],
 						         num_unique_fitnesses[best_index],
-						         num_fitnesses[best_index])
+						         num_fitnesses[best_index],
+						         fitnesses[best_index] if not self.simultaneous_targets else individual_fitnesses[best_index])
+
 					print('new best', self.best[0])
 
 				gen += 1
@@ -245,21 +261,28 @@ class CmaesTrainsNn():
 
 				self.rng.shuffle(self.x_test)
 
-				output = self.model.evaluate(self.x_test, self.y_test,
-											 initial_f_hat, initial_f_hat_seq,
-											 return_equation=True,
-											 return_decoded_list=True,
-											 return_fitnesses=True)
+				test_output = self.model.evaluate(self.x_test, self.y_test,
+											 	  initial_f_hat, initial_f_hat_seq,
+											 	  return_equation=True,
+											 	  return_decoded_list=True,
+											 	  return_fitnesses=True)
 
-				best_individual_data.append([gen,
-											 self.target_index,
-											 self.best[3],
-											 self.best[0],
-											 # output['fitness'],
-											 output['fitness_best'],
-											 self.best[4],
-											 self.best[5],
-											 self.model.FLoPs])
+				row = [gen,
+					   self.target_index,
+					   self.best[3],
+					   self.best[0],
+					   test_output['fitness_best'],
+					   self.best[4],
+					   self.best[5],
+					   self.model.FLoPs]
+
+				if len(self.X_train) > 1 and self.simultaneous_targets:
+
+					for i, _ in enumerate(self.X_train):
+
+						row.insert(3+i, self.best[-1][i])
+
+				best_individual_data.append(row)
 
 				print('total compute', self.model.FLoPs)
 
@@ -267,7 +290,7 @@ class CmaesTrainsNn():
 				if max_FLoPs < self.model.FLoPs:
 					break
 
-				if not self.multi_targets:
+				if not self.simultaneous_targets:
 					if self.model.FLoPs - FLoPs_checkpoint > max_FLoPs/len(self.Y_train):
 
 						self.y_train = self.Y_train[self.target_index]
