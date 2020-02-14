@@ -1,6 +1,6 @@
 import GeneticProgramming as GP
 from GeneticProgramming.consts import *
-from NeuroEncodedExpressionProgramming import build_tree
+from kexpressions import build_tree
 
 from keras.models import Model
 from keras.layers import Input, SimpleRNN, Dense, Lambda
@@ -12,14 +12,51 @@ import pandas as pd
 
 import itertools
 
-class seq2seq():
+class TlcsrNetwork():
 
-    def __init__(self, rng, num_data_encoder_tokens,
+    def __init__(self, rng, num_data_encoder_inputs,
                  primitive_set, terminal_set,
                  max_decoder_seq_length=None,
                  timelimit=1, use_constants=False,
                  options=None):
-        """Initialize the seq2seq model"""
+        """Initialize the TLC-SR network
+
+        Parameters
+        ----------
+        rng : np.random.RandomState
+            Use this for reproducible results
+        num_data_encoder_inputs : int
+            The number of input nodes to
+            the encoder will encounter. So far,
+            we have only set this to 2 for x-values
+            and error at those x-values.
+        primitive_set : list
+            The allowed primitives.
+        terminal_set : list
+            The allowed terminals. For constants, only
+            put specific constants in this list. If general
+            constants are desired use use_constants=True.
+        max_decoder_seq_length : int (default=None)
+            If using k-expression set head_length in
+            options to an integer then max_decoder_seq_length
+            will be computed. Otherwise, specify this yourself.
+            This number refers to the maximum length output the
+            decoder is allowed to produce.
+        timelimit : int
+            The maximum number of rewrites the network is allowed.
+        use_constants : bool
+            If true, two nodes will be added to the output of data
+            encoder: one to let the NN choose to place a constant
+            (part of one-hot vector) and another that specifies the
+            of the constant to use (not part of softmax).
+        options : dict
+            Some additional options include:
+            'use_k-expressions' : bool
+                Set to true if you want equations interpreted as k-expression.
+            'head_length' : int
+                Length of head in k-expression. Only use
+                if use_k-expressions=True.
+        """
 
         self.rng = rng
 
@@ -28,26 +65,31 @@ class seq2seq():
         self.primitive_set = primitive_set
         self.terminal_set = terminal_set
 
-        self.num_data_encoder_tokens = num_data_encoder_tokens
+        self.num_data_encoder_inputs = num_data_encoder_inputs
         self.num_samples = 1
 
         self.target_characters = ['START', 'STOP'] + primitive_set + terminal_set
 
         get_onehot = lambda index, max_index=len(self.target_characters): np.eye(max_index)[index]
 
+        # Create dictionaries to map between tokens indices and one-hot vectors of tokens
         self.target_token_index = {char: i for i, char in enumerate(self.target_characters)}
         self.target_token_onehot = {char: get_onehot(i) for i, char in enumerate(self.target_characters)}
         self.target_index_token = {i: char for i, char in enumerate(self.target_characters)}
 
-        self.FLoPs = 0
+        self.effort = 0
 
         if options is None:
+
+            # Default to s-expressions.
             self.options = {'use_k-expressions': False}
             self.max_decoder_seq_length = max_decoder_seq_length
 
         else:
             self.options = options
 
+            # Get lenght of decoder output based
+            # on head length.
             self.head_length = self.options['head_length']
 
             # get max number of children a primitive can have
@@ -70,7 +112,8 @@ class seq2seq():
 
             self.not_start_indices = np.array(self.not_start_indices)
             
-            # get indices of primitive
+            # Get indices of primitive. Will be used when enforcing
+            # terminal output in tail.
             tokens_to_remove.extend(self.primitive_set)
 
             self.terminal_indices = list(range(len(self.target_token_index)))
@@ -79,27 +122,41 @@ class seq2seq():
 
             self.terminal_indices = np.array(self.terminal_indices)
 
-        self.model = self.get_model()
-
-        self.f_hat = lambda x: 0*x[0]
+        # construct the neural network
+        self.network = self.get_network()
 
         self.timelimit = timelimit
 
 
-    def get_model(self):
-        """Create the model. This model does not use teacher forcing, meaning that
-        the decoder generates is own input data (except for the first token 'START')
-        even during training."""
+    def get_network(self):
+        """Create the network. This network does not use
+        teacher forcing, meaning that the decoder generates
+        is own input data (except for the first token 'START')
+        even during training.
+
+        The network has a decoder and two encoders: equation encoder
+        and data encoder. The equation encoder takes one-hot vector
+        representations of equations. The data encoder takes data
+        related to the current equation at each x-value as a sequence.
+        The decoder outputs a one-hot vector representation of a new
+        equation.
+        """
 
         self.num_decoder_tokens = len(self.target_characters)
 
-        # latent_dim is the dimensionality of the state vector that the encoder/decoder share
+        # latent_dim is the dimensionality of the
+        # state vector that the encoders share.
+        # The state vector of the decoder sill
+        # have 2*laten_dim to be able to fit
+        # the state vectors from both encoders.
         latent_dim = 8
 
+        # These are the initial hidden values of
+        # both encoders. This is done for reproducibility.
         initial_states = Input((latent_dim,))
 
         # Define data encoder
-        data_encoder_inputs = Input(shape=(None, self.num_data_encoder_tokens))
+        data_encoder_inputs = Input(shape=(None, self.num_data_encoder_inputs))
         data_encoder_rnn1 = SimpleRNN(latent_dim, return_state=True, return_sequences=True, activation='relu')
         data_encoder_rnn2 = SimpleRNN(latent_dim, return_state=True, activation='relu')
 
@@ -115,13 +172,14 @@ class seq2seq():
         eq_encoder_outputs, eq_state_h2 = eq_encoder_rnn2(eq_encoder_rnn1_output, initial_state=initial_states)
         
         # We discard `encoder_outputs` and only keep the states.
-        # encoder_states = [state_h, state_c]
+        # Before putting these into the decoder, we must concatenate.
+        # The Lambda is necessary here for reproducible results. I don't
+        # understand why.
         encoder_states_layer1 = Lambda(lambda cat_list: K.concatenate((cat_list[0], cat_list[1]), axis=1))([data_state_h1, eq_state_h1])
-        # K.concatenate((data_state_h1, eq_state_h1), axis=-1)
         encoder_states_layer2 = Lambda(lambda cat_list: K.concatenate((cat_list[0], cat_list[1]), axis=1))([data_state_h2, eq_state_h2])
-        # K.concatenate((data_state_h2, eq_state_h2), axis=-1)
 
-        # Set up the decoder, which will only process one timestep at a time.
+        # Set up the decoder, which will only process one timestep at a time
+        # because it will take its previous output as input.
         decoder_inputs = Input(shape=(1, self.num_decoder_tokens))
         decoder_rnn1 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation='relu')
         decoder_rnn2 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation='relu')
@@ -144,7 +202,6 @@ class seq2seq():
         for _ in range(self.max_decoder_seq_length):
 
             # Run the decoder on one timestep
-            # outputs, state_h, state_c = decoder_lstm(inputs, initial_state=encoder_states)
             decoder_rnn1_outputs, decoder_rnn1_states = decoder_rnn1(inputs, initial_state=decoder_rnn1_states)
             decoder_rnn2_outputs, decoder_rnn2_states = decoder_rnn2(decoder_rnn1_outputs, initial_state=decoder_rnn2_states)
 
@@ -173,53 +230,60 @@ class seq2seq():
         if self.use_constants:
             decoder_outputs_const = Lambda(lambda x: K.concatenate(x, axis=1))(all_outputs_const)
 
-        # Define and compile model as previously
+        # Define and compile newtork
         if self.use_constants:
-            model = Model([initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs], [decoder_outputs, decoder_outputs_const])
+            network = Model([initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs], [decoder_outputs, decoder_outputs_const])
     
         else:
-            model = Model([initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs], decoder_outputs)
+            network = Model([initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs], decoder_outputs)
 
-        model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+        network.compile(optimizer='rmsprop', loss='categorical_crossentropy')
 
-        # get compute function for fast computing while
-        # evaluation model
+        # calculate effort of evaluating NN based on
+        # length of input to equation encoder and data encoder
+        # Save as function for when we know these value
         eq_nodes = len(self.terminal_set)+len(self.primitive_set)
 
         output_len = self.head_length+self.tail_length
-        activations_in_model = lambda eq_input_len, data_input_len: eq_input_len*(eq_nodes+latent_dim*2) + data_input_len*(self.num_data_encoder_tokens +  latent_dim*2) + output_len*((2*latent_dim)*2 + eq_nodes)
+        activations_in_network = lambda eq_input_len, data_input_len: eq_input_len*(eq_nodes+latent_dim*2) + data_input_len*(self.num_data_encoder_inputs +  latent_dim*2) + output_len*((2*latent_dim)*2 + eq_nodes)
 
         # for single layer with n nodes and previous layer of m nodes,
         # there are m-1 additions for each of the n nodes. Thus, (m-1)*n
-        additions_in_model = lambda eq_input_len, data_input_len: eq_input_len*((eq_nodes-1)*latent_dim + 3*latent_dim*(latent_dim-1)) + data_input_len*((self.num_data_encoder_tokens-1)*latent_dim + 3*latent_dim*(latent_dim-1)) + (3*(2*latent_dim-1)*(2*latent_dim) + (2*latent_dim-1)*eq_nodes)*output_len
+        additions_in_network = lambda eq_input_len, data_input_len: eq_input_len*((eq_nodes-1)*latent_dim + 3*latent_dim*(latent_dim-1)) + data_input_len*((self.num_data_encoder_inputs-1)*latent_dim + 3*latent_dim*(latent_dim-1)) + (3*(2*latent_dim-1)*(2*latent_dim) + (2*latent_dim-1)*eq_nodes)*output_len
 
         weights_in_eq_encoder = lambda eq_input_len: eq_input_len*(eq_nodes*latent_dim + 3*latent_dim**2) 
-        weights_in_data_encoder = lambda data_input_len: data_input_len*(self.num_data_encoder_tokens*latent_dim + 3*latent_dim**2)
+        weights_in_data_encoder = lambda data_input_len: data_input_len*(self.num_data_encoder_inputs*latent_dim + 3*latent_dim**2)
         weights_in_decoder = (output_len)*(3*(2*latent_dim)**2 + (2*latent_dim)*eq_nodes)
  
         weights_per_eval = lambda eq_input_len, data_input_len: weights_in_eq_encoder(eq_input_len) + weights_in_data_encoder(data_input_len) + weights_in_decoder
 
-        self.computes_in_eval = lambda eq_input_len, data_input_len: weights_per_eval(eq_input_len, data_input_len) + activations_in_model(eq_input_len, data_input_len) + additions_in_model(eq_input_len, data_input_len)
+        self.effort_in_eval = lambda eq_input_len, data_input_len: weights_per_eval(eq_input_len, data_input_len) + activations_in_network(eq_input_len, data_input_len) + additions_in_network(eq_input_len, data_input_len)
 
-        return model
+        return network
 
 
     def read_decoded_output(self, outputs, const_outputs=None):
         """Get tokenized output as a string. That is, convert
         the output of the neural network -- softmaxed list of values
         -- to a string of tokens that should represent an equation
-        if the neural network has been trained well.
+        if the neural network has been trained well or if using
+        k-expressions.
         
         Paramters
         ---------
         outputs : np.array
-            The output from the model (decoder).
+            The output from the decoder.
             The shape is (1, max_decoder_seq_length, num_decoder_tokens).
+
+        const_outputs : list (default=None)
+            Used only if using constants. If so, this is a list of
+            the output constant values of shape (1, max_decoder_seq_length, 1).
 
         Returns
         -------
          : str
-            Returns a string that is a lisp without the paraenthesis.
+            Returns a string that is a list of tokens. Either
+            an s-expression (no parens) or k-expression.
         """
 
         decoded_string_list = ['START']
@@ -261,11 +325,12 @@ class seq2seq():
         Parameters
         ----------
         x : np.array
-            The x data. Input data to f_hat. The array is shaped as (num featurs, num input vars).
+            The x data. Input data to f_hat.
+            The array is shaped as (num featurs, num input vars).
         y : np.array
             The y data. The desired output of f_hat.
         f_hat : function
-            The approimation of the target function.
+            The approximation of the target function.
 
         Returns
         -------
@@ -315,10 +380,10 @@ class seq2seq():
 
     def get_decoder_input_data(self):
         """Get the START token for input to the decoder. The other inputs
-        to the token will be generated by the previous output of the decoder."""
+        to the token will be generated by the previous output of the decoder.
+        TODO: This could probably to hard-coded into the network."""
 
-        # Prepare decoder input data that just contains the start character
-        # Note that we could have made it a constant hard-coded in the model
+        # Prepare decoder input data that just contains the start character.
         decoder_input_data = np.zeros((self.num_samples, 1, self.num_decoder_tokens))
         decoder_input_data[:, 0, self.target_token_index['START']] = 1.
 
@@ -329,63 +394,83 @@ class seq2seq():
                  return_equation=False,
                  return_equation_str=False,
                  return_decoded_list=False,
-                 return_fitnesses=False):
+                 return_errors=False):
+        """Get lowest error of TLC-SR (multiple rewrites)
+        on a particular dataset.
 
-        fitness_sum = 0
-        fitnesses = []
+        Parameters
+        ----------
+        x : np.array
+            x-data from dataset
+        y : np.array
+            y-data from dataset
+        f_hat : function
+            The initial approximation of dataset.
+        f_hat_seq : list
+            The initial string representation of f_hat.
+        return_equation : bool
+            If true, return the lowest error function.
+        return_equation_str : bool
+            If true, return the string representation of
+            the lowest error function.
+        return_decoded_list : bool
+            If true, return the string representation of
+            most recent output equation.
+        return_errors : bool
+            If true, return all errors.
 
-        # get the lowest error
-        fitness_best = float('inf')
+        Return
+        ------
+        output : dict
+            Included info depends on return_...
+            parameters.
+        """
+
+        error_sum = 0
+        errors = []
+
+        # Get the lowest error.
+        error_best = float('inf')
 
         # We will keep track of the min error
         # over the previous period scores.
+        # TODO: pass to class as parameter
         period = 5
-        moment_scores = []
-        current_momement_score = float('inf')
 
-        # TODO: save each equation and each fitness
+        # TODO: save each equation and each error
+        # Important to start at t=1, so that the
+        # condition for adding group score works.
+        # Otherwise, will at when t=0...
         for t in range(1, 1+self.timelimit):
 
-            output = self.evaluate_single(x, y, f_hat, f_hat_seq,
-                                          return_equation=True,
-                                          return_decoded_list=True)
+            output = self.rewrite_equation(x, y, f_hat, f_hat_seq,
+                                           return_equation=True,
+                                           return_decoded_list=True)
 
-            fitness = output['fitness']
+            error = output['error']
 
-            if fitness < fitness_best:
-                fitness_best = fitness
+            if error < error_best:
+                error_best = error
 
-            fitnesses.append(fitness)
+            errors.append(error)
 
-            # If the model really produced an equation...
-            # This does not happen for k-expressions
+            # If the network really produced an equation...
+            # This check is unnecessary for k-expressions.
             if output['equation'] is not None:
 
                 f_hat = output['equation']
                 f_hat_seq = output['decoded_list']
 
-            fitness_sum += fitness
+            error_sum += error
 
-            if t % period == 0:
+            # If solution has deteriorated between past
+            # two groups, stop rewriting equations.
+            if len(errors) >= 2*period:
+                older_group_min = min(errors[-2*period:-period])
+                newer_group_min = min(errors[-period:])
 
-                moment_scores.append(current_momement_score)
-
-                # # Don't need more than the latest two
-                # # moment scores.
-                # if len(moment_scores) == 3:
-                #     del moment_scores[0]
-
-                if len(moment_scores) >= 2:
-
-                    # if solution has deteriorated between past
-                    # two moments
-                    if moment_scores[-1] >= moment_scores[-2]:
-                        break
-
-                current_momement_score = float('inf')  
-
-            if current_momement_score > fitness:
-                    current_momement_score = fitness
+                if older_group_min < newer_group_min:
+                    break
 
         if not return_equation:
             del output['equation']
@@ -394,35 +479,67 @@ class seq2seq():
             del output['decoded_list']
             del output['raw_decoded_list']
 
-        if return_fitnesses:
-            output['fitnesses'] = fitnesses
+        if return_errors:
+            output['errors'] = errors
 
-        output['fitness_sum'] = fitness_sum
-        output['fitness_best'] = fitness_best
+        output['error_sum'] = error_sum
+        output['error_best'] = error_best
 
         return output
 
 
-    def evaluate_single(self, x, y, f_hat, f_hat_seq,
+    def rewrite_equation(self, x, y, f_hat, f_hat_seq,
                         initial_states=np.zeros(8)[None, :],
                         return_equation=False,
                         return_equation_str=False,
                         return_decoded_list=False):
-        """Evaluate the model"""
+        """Rewrite the equation using the network.
 
+        Parameters
+        ----------
+        x : np.array
+            The input data for the dataset.
+        y : np.array
+            The output data for the dataset.
+        f_hat : function
+            The current approximation of the dataset.
+        f_hat_seq : list
+            List of strings. Each string is a token
+            in the equation.
+        initial_states : np.array (default all zeros)
+            The initial states of the encoders hidden
+            values.
+        return_equation : bool
+            If true, return the function (which does equation)
+            output by the netork
+        return_equation_str : bool
+            If true, return the string representation
+            of the equation output by network.
+        return_decoded_list : bool
+            If true, return the output of the network after
+            it has been converted to tokens.
+
+        Returns
+        -------
+        output : dict
+            The keys depend on the return_... parameters.
+        """
+
+        # Get input ready.
         data_encoder_input_data = self.get_data_encoder_input_data(x, y, f_hat)
         eq_encoder_input_data = self.get_eq_encoder_input_data(f_hat_seq)
         decoder_input_data = self.get_decoder_input_data()
 
-        prediction = self.model.predict([initial_states, data_encoder_input_data, eq_encoder_input_data, decoder_input_data])
+        # Send through neural network
+        prediction = self.network.predict([initial_states, data_encoder_input_data, eq_encoder_input_data, decoder_input_data])
 
-        self.FLoPs += self.computes_in_eval(eq_input_len=len(eq_encoder_input_data[0]), 
+        self.effort += self.effort_in_eval(eq_input_len=len(eq_encoder_input_data[0]), 
                                             data_input_len=len(data_encoder_input_data[0]))
 
         if self.options['use_k-expressions']:
 
             if self.use_constants:
-                # Don't pick terminals in the tail
+                # Don't pick primitives in the tail
                 for i, row in enumerate(prediction[0][0]):
                     if i >= self.head_length:
                         prediction[0][0, i, self.terminal_indices] += 2.
@@ -430,14 +547,14 @@ class seq2seq():
                         prediction[0][0, i, self.not_start_indices] += 2.
 
             else:
-                # Don't pick terminals in the tail
+                # Don't pick primitives in the tail
                 for i, row in enumerate(prediction[0]):
                     if i >= self.head_length:
                         prediction[0, i, self.terminal_indices] += 2.
                     else:
                         prediction[0, i, self.not_start_indices] += 2.
 
-        # decoded in terms of seq2seq model -- still a k-expression
+        # decoded in terms of seq2seq network -- still a k-expression
         if self.use_constants:
             decoded_string = self.read_decoded_output(prediction[0], prediction[1])
 
@@ -456,18 +573,25 @@ class seq2seq():
             # STOP not in decoded_list, so don't worry about removing it.
             pass
 
+        # Remove START token
         decoded_list = decoded_list[1:]
 
         if not self.options['use_k-expressions']:
             # We will adjust this value, if decoded_list
-            # actually represents and equation.
-            fitness = self.get_penalty(decoded_list,
-                                       primitive_set=self.primitive_set,
-                                       terminal_set=self.terminal_set)
+            # actually represents an equation.
+            error = self.get_penalty(decoded_list,
+                                     primitive_set=self.primitive_set,
+                                     terminal_set=self.terminal_set)
 
+        # nan's can appear in the output of the network
+        # if inf's are subtracted. inf's can appear when
+        # weights are too large, which is easier to to
+        # with reucurrance.
         if np.any(np.isnan(prediction)):
-            fitness = float('inf')
+            error = float('inf')
 
+        # if START is in decoded list, keep the penalty already computed
+        # otherwise get the actual error
         elif 'START' not in decoded_list:
 
             if self.options['use_k-expressions']:
@@ -483,28 +607,33 @@ class seq2seq():
                     lisp = None
 
                 else:
-                    # This value might be None if decoded_string is not a stripped_lisp
+                    # This value might be None if decoded_string is not a
+                    # stripped_lisp
                     lisp = self.get_lisp_from_stripped_lisp(decoded_list, self.primitive_set)
 
             if lisp is not None:
                 if self.is_equation(lisp):
                     t = GP.Individual(rng=None, primitive_set=self.primitive_set, terminal_set=self.terminal_set,
                                       tree=lisp, actual_lisp=True)
-                    t.evaluate_fitness([np.vstack((y,x)).T], compute_val_error=False)
-                    fitness = t.fitness[0]
-            else:
-                print('lisp is None! what!?')
+                    dataset = [np.vstack((y,x)).T, []]
+                    t.evaluate_fitness(dataset, compute_val_error=False)
+                    error = t.fitness[0]
+                    self.effort += t.get_number_of_operations_in_tree_eval(dataset)
 
-        output = {'fitness': fitness}
+
+        output = {'error': error}
 
         if return_equation:
-            output['equation'] = self.f_hat if fitness < 10**9 else None
+            # This check is if an invalid equation was generated.
+            output['equation'] = self.f_hat if error < 10**9 else None
 
         if return_equation_str:
-            output['equation_str'] = lisp if fitness < 10**9 else None
+            # This check is if an invalid equation was generated.
+            output['equation_str'] = lisp if error < 10**9 else None
 
         if return_decoded_list:
-            output['decoded_list'] = decoded_list if fitness < 10**9 else None
+            # This check is if an invalid equation was generated.
+            output['decoded_list'] = decoded_list if error < 10**9 else None
 
         output['raw_decoded_list'] = decoded_list
 
@@ -514,7 +643,7 @@ class seq2seq():
     @staticmethod
     def get_penalty(decoded_list, primitive_set, terminal_set):
         """Get a penalty for non-equation that will
-        guide the NN to produces equation in the future.
+        guide the NN to produce equation in the future.
 
         In a binary tree, there is one more leaf than internal
         node. Thus, we penalize the supposed equation based on
@@ -523,7 +652,12 @@ class seq2seq():
         Parameters
         ---------
         decoded_list : list of str
-            The equation
+            The equation as a list of tokens
+
+        Returns
+        -------
+        penalty : float
+            Multiple of 10**9
         """
         
         # Assume not an equation, we will
@@ -567,7 +701,7 @@ class seq2seq():
             t = GP.Tree(rng=self.rng, primitive_set=self.primitive_set, terminal_set=self.terminal_set,
                         tree=eq, actual_lisp=True)
             f = eval('lambda x:' + t.convert_lisp_to_standard_for_function_creation())
-            f([1])
+            f([1])  # try to evaluate it at x=1. 
             self.f_hat = f
             return True
 
@@ -645,13 +779,21 @@ class seq2seq():
             return None
 
 
-    @staticmethod
-    def set_weights(weights, model):
+    def set_weights(self, weights):
+        """Set the weights of a neural network built with
+        keras. Excludes bias weights.
+
+        Parameters
+        ----------
+        weights : list
+            Flat version of the weights, which must be of the
+            correct size.
+        """
 
         weight_shapes = [(0,0)]
         start = 0
 
-        for layer in model.layers:
+        for layer in self.network.layers:
 
             layer_weights = layer.get_weights()
 
@@ -681,129 +823,46 @@ class seq2seq():
                 start = end2
 
 
-    @staticmethod
-    def get_num_weights(model):
+    def get_num_weights(self):
+        """Count the number of weights
+        necessary for set_weights. Does not
+        count bias weights.
+        """
+
         # get number of weights
         num_weights = 0
-        for layer in model.layers:
+        for layer in self.network.layers:
             layer_weights = layer.get_weights()
 
-            # Things like input layer have length 0.
-            # if len(layer_weights) > 0:
-            #     num_weights += np.prod(layer_weights[0].shape)
-
-            #     if len(layer_weights) == 3:
-            #         num_weights += np.prod(layer_weights[1].shape)
             if len(layer_weights) > 0:
                 for lw in layer_weights:
                     num_weights += np.prod(lw.shape)
+
         return num_weights
-
-
-    # @staticmethod
-    # def save_model_weights(model, save_loc):
-
-    #     flattened_weights = []
-    #     for layer in model.layers:
-    #         layer_weights = layer.get_weights()
-
-    #         # Things like input layer have length 0.
-    #         if len(layer_weights) > 0:
-    #             flattened_weights.extend(layer_weights[0].flatten())
-
-    #             if len(layer_weights) == 3:
-    #                 flattened_weights.extend(layer_weights[1].flatten())
-
-    #     flattened_weights = np.array(flattened_weights, dtype=np.float64)
-
-    #     pd.DataFrame(flattened_weights).to_csv(save_loc, index=False, header=None)
-
-
-    # @staticmethod
-    # def load_model_weights(model, save_loc):
-
-    #     flattened_weights = pd.read_csv(save_loc,
-    #                                     header=None,
-    #                                     dtype=np.float64).iloc[:,:].values
-
-    #     print(flattened_weights)
-
-    #     # set weights
-    #     model.set_weights(flattened_weights, model.model)
-
-    #     print(model.model.get_weights())
 
 
 if __name__ == '__main__':
 
-    num_samples = 1
 
-    # options = None
     options = {'use_k-expressions': True,
                'head_length': 3}    
 
-    s2s = seq2seq(num_data_encoder_tokens=2,
-                  primitive_set=['*', '+', '-'],
-                  terminal_set=['x0'],
-                  max_decoder_seq_length=30,
-                  timelimit=10,
-                  options=options)
+    model = TlcsrNetwork(rng=np.random.RandomState(0),
+                         num_data_encoder_inputs=2,
+                         primitive_set=['*', '+', '-'],
+                         terminal_set=['x0'],
+                         timelimit=10,
+                         options=options)
 
     x = np.linspace(-1, 1, 20)[None, :]
     f = lambda x: x[0]**2
     y = f(x)
     f_hat = lambda x: 0*x[0]
-    # f_hat_seq = ['START', '-', 'x0', 'x0', 'STOP']
-    f_hat_seq = ['START', '-', 'x0', 'x0']# + ['x0']*(len()-4)
-
-    # import pandas as pd
-    # import itertools
-    # # from keras.models import load_model
-    # # s2s.model = load_model('/Users/rgrindle/Documents/model_saving_test.h5')
-    # def save_model_weights(model):
-
-    #     weights = model.get_weights()
-
-    #     weight_shapes = [w.shape for w in weights]
-    #     flattened_weights = list(itertools.chain(*[w.flatten() for w in weights]))
-
-    #     pd.DataFrame(flattened_weights).to_csv('/Users/rgrindle/Documents/model_weights_saving_test.csv', index=False, header=None)
+    f_hat_seq = ['START', '-', 'x0', 'x0']
 
 
-    # def load_model_weights(model):
+    output = model.evaluate(x, y, f_hat, f_hat_seq,
+                            return_decoded_list=True)
 
-    #     weights = model.get_weights()
-    #     weight_shapes = [w.shape for w in weights]
-
-    #     loaded_weights = pd.read_csv('/Users/rgrindle/Documents/model_weights_saving_test.csv', header=None).iloc[:, :].values
-
-    #     reshaped_loaded_weights = []
-    #     start = 0
-
-    #     for shape in weight_shapes:
-
-    #         length = np.prod(shape)
-
-    #         reshaped_loaded_weights.append(loaded_weights[start:start+length].reshape(shape))
-
-    #         start += length
-
-    #     model.set_weights(reshaped_loaded_weights)
-
-    #     return reshaped_loaded_weights
-
-
-    # # save_model_weights(s2s.model)
-    # weights = load_model_weights(s2s.model)
-
-    # stuff = sum([np.sum(w1 - w2) for w1, w2 in zip(weights, s2s.model.get_weights())])
-    # # stuff = [sum(w) if type(w) == np.ndarray else w for w in stuff]
-    # print('stuff', stuff)
-
-    output = s2s.evaluate(x, y, f_hat, f_hat_seq,
-                          return_decoded_list=True)
-    print('fitness', output['fitness'])
+    print('best error', output['error_best'])
     print('final nn output', output['raw_decoded_list'])
-
-    # save the model
-    s2s.model.save('/Users/rgrindle/Documents/model_saving_test.h5')

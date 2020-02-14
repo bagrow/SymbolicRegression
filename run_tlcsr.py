@@ -2,8 +2,8 @@
 symbolic regression.
 """
 
-from seq2seq_second import seq2seq
-from CmaesTrainsNn import CmaesTrainsNn
+from TlcsrNetwork import TlcsrNetwork
+from Tlcsr import Tlcsr
 import GeneticProgramming as GP
 from GeneticProgramming.IndividualManyTargetData import IndividualManyTargetData
 
@@ -16,15 +16,15 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('rep', help='Number of runs already performed', type=int)
 parser.add_argument('exp', help='Experiment number. Used in save location', type=int)
-parser.add_argument('--use_kexpressions', action='store_true')
-parser.add_argument('--genetic_programming', action='store_true')
-parser.add_argument('--single_target', action='store_true')
-parser.add_argument('--simultaneous_targets', action='store_true')
-parser.add_argument('--use_constants', action='store_true')
-parser.add_argument('--inconsistent_x', action='store_true')
-parser.add_argument('--shuffle_x', action='store_true')
-parser.add_argument('--use_benchmarks', action='store_true')
-parser.add_argument('--test_index', type=int)
+parser.add_argument('--use_kexpressions', action='store_true', help='Use k-expressions to interpret input and output to TLC-SR')
+parser.add_argument('--genetic_programming', action='store_true', help='Do genetic programming')
+parser.add_argument('--single_target', action='store_true', help='Use only one target function to create train, validation, test datasets')
+parser.add_argument('--simultaneous_targets', action='store_true', help='Use multiple target functions for train, validation, test datasets')
+parser.add_argument('--use_constants', action='store_true', help='Included constants with two nodes: one for one-hot and other for constant value')
+parser.add_argument('--inconsistent_x', action='store_true', help='Random (uniformly dist) selection of x-values')
+# parser.add_argument('--shuffle_x', action='store_true', help='Shuffle x-values before input into NN')
+parser.add_argument('--use_benchmarks', action='store_true', help='Use the benchmark functions for datasets')
+parser.add_argument('--test_index', type=int, help='Index of the target function to use to create test dataset. Others are used for training if --simultaneous_targets')
 
 args = parser.parse_args()
 print(args)
@@ -35,7 +35,7 @@ assert (args.simultaneous_targets and args.single_target) == False, 'Cannot use 
 
 if args.use_kexpressions:
     options = {'use_k-expressions': True,
-               'head_length': 15}
+               'head_length': 15}   # this defines length eq output from NN
 
 else:
     options = None
@@ -49,15 +49,6 @@ if args.use_constants:
 
 timelimit = 100
 
-s2s = seq2seq(rng=np.random.RandomState(100*args.exp+args.rep),
-              num_data_encoder_tokens=2,
-              primitive_set=primitive_set,
-              terminal_set=terminal_set,
-              # max_decoder_seq_length=10,
-              use_constants=args.use_constants,
-              timelimit=timelimit,
-              options=options)
-
 if args.use_benchmarks:
     function_strs = ['x[0]**6 + x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]',   # Nguyen-4
                      'x[0]**4 + x[0]**3 + x[0]**2 + x[0]',   # Koza-1
@@ -70,7 +61,11 @@ if args.use_benchmarks:
     train_function_strs = [f for i, f in enumerate(function_strs) if i != args.test_index]
 
 else:
-    train_function_strs = ['x[0]', '2*x[0]', 'x[0]**2', 'x[0]**2 + x[0]', 'x[0]**3']
+    train_function_strs = ['x[0]',
+                           '2*x[0]',
+                           'x[0]**2',
+                           'x[0]**2 + x[0]',
+                           'x[0]**3']
 
 
 functions = [eval('lambda x: '+f_str) for f_str in train_function_strs]
@@ -127,10 +122,7 @@ y_test = f_test(x_test)
 rep = args.rep
 exp = args.exp
 
-max_compute = 5*2*10**9
-
-if args.single_target:
-    max_compute *= 5
+max_effort = 5*2*10**9
 
 rng = np.random.RandomState(args.rep+100*args.exp)
 
@@ -148,9 +140,11 @@ if args.genetic_programming:
         val_dataset = np.array([y_val, x_val[0]]).T
         test_dataset = np.array([y_test, x_test[0]]).T
 
-        output_path = os.path.join(os.environ['EE_DATA'], 'experiment'+str(args.exp), 'gp')
+        output_path = os.path.join(os.environ['TLCSR_DATA'], 'experiment'+str(args.exp), 'gp')
 
         # dataset is the training dataset and validation dataset
+        # This is how the datasets are handle for GP.
+        # Perhaps I should update this.
         dataset = [train_dataset, val_dataset]
         test_data = test_dataset
 
@@ -158,11 +152,12 @@ if args.genetic_programming:
 
         num_vars = 1
 
-        params = {'max_compute': max_compute*len(X_train)}
+        # max_effort as set above is per training dataset
+        params = {'max_effort': max_effort*len(X_train)}
 
         gp = GP.GeneticProgrammingAfpo(rng=rng,
                                        pop_size=100,
-                                       max_gens=600000,
+                                       max_gens=600000, # can't set to inf since range(max_gens) used
                                        primitive_set=primitive_set,
                                        terminal_set=terminal_set,
                                        data=dataset,
@@ -179,7 +174,7 @@ if args.genetic_programming:
                       output_path=output_path,
                       output_file=output_file)
 
-    else:
+    else:   # for single target
 
         for i, (x_train, y_train) in enumerate(zip(X_train, Y_train)):
 
@@ -188,7 +183,7 @@ if args.genetic_programming:
             val_dataset = np.array([y_val, x_val[0]]).T
             test_dataset = np.array([y_test, x_test[0]]).T
 
-            output_path = os.path.join(os.environ['EE_DATA'], 'experiment'+str(args.exp), 'gp')
+            output_path = os.path.join(os.environ['TLCSR_DATA'], 'experiment'+str(args.exp), 'gp')
 
             # the population from the previous run of
             # genetic programming
@@ -202,7 +197,8 @@ if args.genetic_programming:
 
             num_vars = 1
 
-            params = {'max_compute': max_compute}
+            # max_effort as set above is per training dataset
+            params = {'max_effort': max_effort*len(X_train)}
 
             gp = GP.GeneticProgrammingAfpo(rng=rng,
                                            pop_size=100,
@@ -227,19 +223,32 @@ if args.genetic_programming:
 
             prev_pop = gp.pop
 
-else:
+else:   # for TLC-SR
 
-    fitter = CmaesTrainsNn(rep=rep, exp=exp,
-                           model=s2s,
-                           X_train=X_train, Y_train=Y_train,
-                           x_val=x_val, y_val=y_val,
-                           x_test=x_test, y_test=y_test, test_dataset_name='test_index'+str(args.test_index),
-                           timelimit=timelimit,
-                           simultaneous_targets=args.simultaneous_targets,
-                           shuffle_x=args.shuffle_x,
-                           options=options)
+    save_loc = os.path.join(os.environ['EE_DATA'], 'experiment'+str(args.exp))
+
+    model = TlcsrNetwork(rng=np.random.RandomState(100*args.exp+args.rep),
+                         num_data_encoder_inputs=2, # (xi, ei) -> data encoder
+                         primitive_set=primitive_set,
+                         terminal_set=terminal_set,
+                         use_constants=args.use_constants,
+                         timelimit=timelimit,
+                         options=options)
+
+    fitter = Tlcsr(rep=rep, exp=exp,
+                   model=model,
+                   X_train=X_train, Y_train=Y_train,
+                   x_val=x_val, y_val=y_val,
+                   x_test=x_test, y_test=y_test,
+                   test_dataset_name='test_index'+str(args.test_index),
+                   timelimit=timelimit,
+                   simultaneous_targets=args.simultaneous_targets,
+                   options=options)
 
     cmaes_options = {'popsize': 100,
-                     'tolfun': 0}  # toleration in function value
+                     'tolfun': 0}  # tolerance in function value
 
-    fitter.fit(max_FLoPs=max_compute*len(Y_train), sigma=0.5, cmaes_options=cmaes_options)
+    fitter.fit(max_effort=max_effort*len(Y_train),
+               sigma=0.5,
+               cmaes_options=cmaes_options,
+               save_loc=save_loc)

@@ -5,12 +5,11 @@ import cma
 import os
 
 
-class CmaesTrainsNn():
+class Tlcsr():
 
 	def __init__(self, exp, rep, model, X_train, Y_train,
 				 x_val, y_val, x_test, y_test,
 				 test_dataset_name, simultaneous_targets,
-				 shuffle_x,
 				 timelimit, options=None):
 		"""Initialize class with a model to train
 		and data to train it on. We would like to 
@@ -18,27 +17,38 @@ class CmaesTrainsNn():
 
 		Parameters
 		----------
-		model : Seq2Seq
+		model : TlcsrNetwork
 			The model that will be trained by CMA-ES
 		X_train : np.array
-			The input data to f.
+			The input data to {f_1, ..., f_m}.
 		Y_train : np.array
-			The output data to f.
+			The output data to {f_1, ..., f_m}.
 		x_val : np.array
-			The input validation data to f.
+			The input validation data to some
+			function (not {f_1, ..., f_m}).
 		y_val : np.array
-			The output validation data to f.
+			The output validation data to some
+			function (not {f_1, ..., f_m}).
 		x_test : np.array
-			The input test data to f.
+			The input test data to some
+			function (not {f_1, ..., f_m}).
 		y_test : np.array
-			The output test data to f.
+			The output test data to some
+			function (not {f_1, ..., f_m}).
 		test_dataset_name : str
 			The name of the test data. This will appear
 			in the name of the output files.
+		simultaneous_targets : bool
+			Train on multiple targets and validation
+			and test on different targets.
+		timelimit : int
+			The maximum number of equation rewrites.
+		options : dict
+			Additional options.
+			use_k-epxressions : bool
 		"""
 
 		self.simultaneous_targets = simultaneous_targets
-		self.shuffle_x = shuffle_x
 
 		if options is None:
 			self.options = {'use_k-expressions': False}
@@ -57,6 +67,10 @@ class CmaesTrainsNn():
 
 		self.X_train = X_train
 		self.Y_train = Y_train
+
+		# The following is import when using
+		# multiple target functions but not
+		# training simultaneously.
 		self.target_index = 0
 		self.y_train = Y_train[self.target_index]
 		self.x_train = X_train[self.target_index]
@@ -68,15 +82,16 @@ class CmaesTrainsNn():
 		self.x_test = x_test
 		self.y_test = y_test
 
-		self.best = (float('inf'), None, None, None, None, None)
+		self.best = {'val error': float('inf')}
 
 		self.test_dataset_name = test_dataset_name
 		self.timelimit = timelimit
 
 
 	@staticmethod
-	def get_FLoPs_per_generation(n, popsize, mu):
-		"""
+	def get_effort_per_generation(n, popsize, mu):
+		"""Computational effor of CMA-ES
+
 		Parameters
 		----------
 		n : int
@@ -84,20 +99,20 @@ class CmaesTrainsNn():
 		popsize : int
 			The number of individuals in the population
 		mu : int
-			The number of individuals used to make the average?
+			The number of individuals used to make the average
 		"""
 
 		# eq: 5, 9, y, 24, 30, c_1, c_mu, 31, 37
 		return (2*n) + 2*(mu-1)*n + (n+1) + (2*n+7) + (2+4*mu+4*n**2+n) + (2) + (3) + (6 + 5*n**2) + (2*n+5)
 
 
-	def fit(self, max_FLoPs, sigma=0.5, cmaes_options=None):
+	def fit(self, max_effort, save_loc, sigma=0.5, cmaes_options=None):
 		"""Fit the model to the dataset.
 
 		Parameters
 		----------
-		max_FLoPs : int
-			The maximum number of floating point operations
+		max_effort : int
+			The maximum number of mathematical operations
 			allowed to use during fitting. Once this number
 			is reached, save the model and stop fitting.
 		sigma : float
@@ -112,18 +127,15 @@ class CmaesTrainsNn():
 
 		cmaes_options['seed'] = self.seed
 
-		num_weights = self.model.get_num_weights(self.model.model)
-
 		# Initialize weights
+		num_weights = self.model.get_num_weights()
 		weights = np.random.uniform(-1, 1, size=num_weights)
 
 		es = cma.CMAEvolutionStrategy(weights, sigma, cmaes_options)
 
-		cma_ops_per_gen = self.get_FLoPs_per_generation(n=num_weights,
+		cma_ops_per_gen = self.get_effort_per_generation(n=num_weights,
 														popsize=es.popsize,
 														mu=es.sp.weights.mu)
-
-		save_loc = os.path.join(os.environ['EE_DATA'], 'experiment'+str(self.exp))
 
 		os.makedirs(save_loc, exist_ok=True)
 
@@ -155,9 +167,9 @@ class CmaesTrainsNn():
 				best_individual_data[0].insert(3+i, 'Train Error '+str(i))
 
 
-		FLoPs_checkpoint = 0
+		effort_checkpoint = 0
 
-		while max_FLoPs >= self.model.FLoPs:
+		while max_effort >= self.model.effort:
 
 			pop_data_summary = []
 
@@ -165,38 +177,48 @@ class CmaesTrainsNn():
 
 				solutions = es.ask()
 
+				# Average RMSE of the training
+				# datasets. These are the values
+				# we tell CMA-ES about.
 				fitnesses = []
-				val_fitnesses = []
-				num_unique_fitnesses = []
-				num_fitnesses = []
-				individual_fitnesses = []
+
+				# The RMSE on the validation dataset.
+				# This are the values used to pick
+				# the best weight config.
+				val_errors = []
+
+				# Both of these lists count the
+				# number of equations produced by
+				# each solution (weight config) by
+				# counting the number of errors produced.
+				num_unique_errors = []
+				num_errors = []
+
+				# List of error for each target
+				# for all weight configuration in solutions.
+				individual_errors = []
 
 				# evaluate solutions (weights)
 				for w in solutions:
 
-					self.model.set_weights(model=self.model.model, weights=w)
+					self.model.set_weights(weights=w)
 
 					if self.simultaneous_targets:
 
-						individual_fitness_row = []
+						# List of error for each target
+						# for a particular weight configuration.
+						individual_error_row = []
 
 						for x, y in zip(self.X_train, self.Y_train):
-
-							self.rng.shuffle(x)
 
 							output = self.model.evaluate(x, y,
 												 		 initial_f_hat, initial_f_hat_seq)
 
-							individual_fitness_row.append(output['fitness_best'])
+							individual_error_row.append(output['error_best'])
 
-						individual_fitnesses.append(individual_fitness_row)
-
-						# for key in output_avg:
-						# 	output_avg[key] = output_avg[key]/len(self.Y_train)
+						individual_errors.append(individual_error_row)
 
 					else:
-
-						self.rng.shuffle(self.x_train)
 
 						output = self.model.evaluate(self.x_train, self.y_train,
 													 initial_f_hat, initial_f_hat_seq,
@@ -205,113 +227,110 @@ class CmaesTrainsNn():
 
 
 					if len(self.X_train) > 1 and self.simultaneous_targets:
-						fitnesses.append(np.mean(individual_fitness_row))
+						fitnesses.append(np.mean(individual_error_row))
 
 					else:
-						# fitnesses.append(output['fitness_sum'])
-						fitnesses.append(output['fitness_best'])
-
-					self.rng.shuffle(self.x_val)
-
+						fitnesses.append(output['error_best'])
 
 					val_output = self.model.evaluate(self.x_val, self.y_val,
-												 initial_f_hat, initial_f_hat_seq,
-												 return_equation=True,
-												 return_decoded_list=True,
-												 return_fitnesses=True)
+													 initial_f_hat, initial_f_hat_seq,
+													 return_equation=True,
+													 return_decoded_list=True,
+													 return_errors=True)
 
-					# val_fitnesses.append(val_output['fitness'])
-					val_fitnesses.append(val_output['fitness_best'])
-					num_unique_fitnesses.append(len(np.unique(val_output['fitnesses'])))
-					num_fitnesses.append(len(val_output['fitnesses']))
+					val_errors.append(val_output['error_best'])
+					num_unique_errors.append(len(np.unique(val_output['errors'])))
+					num_errors.append(len(val_output['errors']))
 
-					# if output['decoded_list'] is not None:
-					# 	print('final equation', ' '.join(output['decoded_list']))
-
-				# Let ES update the weights based on
-				# the fitness computed during evaluation.
+				# Let CMA-ES update the weights based on
+				# the fitnesses computed during evaluation.
 				es.tell(solutions, fitnesses)
 				es.disp()
 
 				# Keep track of best (lowest fitness)
 				# individual
-				best_index = np.argmin(val_fitnesses)
+				best_index = np.argmin(val_errors)
 
-				if val_fitnesses[best_index] <= self.best[0]:
-					self.model.set_weights(weights=solutions[best_index], model=self.model.model)
-					
-					# This should be a dictionary for clarity.
-					self.best = (val_fitnesses[best_index],
-						         solutions[best_index],
-						         self.model.model,
-						         fitnesses[best_index],
-						         num_unique_fitnesses[best_index],
-						         num_fitnesses[best_index],
-						         fitnesses[best_index] if not self.simultaneous_targets else individual_fitnesses[best_index])
+				if val_errors[best_index] <= self.best['val error']:
+					self.model.set_weights(weights=solutions[best_index])
 
-					print('new best', self.best[0])
+					self.best['val error'] = val_errors[best_index]
+					self.best['weights'] = solutions[best_index]
+					self.best['network'] = self.model.network
+					self.best['fitness'] = fitnesses[best_index]
+					self.best['num unique errors'] = num_unique_errors[best_index]
+					self.best['num errors'] = num_errors[best_index]
+					self.best['training errors'] = fitnesses[best_index] if not self.simultaneous_targets else individual_errors[best_index]
+
+					print('new best', self.best['val error'])
 
 				gen += 1
 
 				# update number of operations
-				self.model.FLoPs += cma_ops_per_gen
+				self.model.effort += cma_ops_per_gen
+
+				# Don't count effort to evaluated test
+				# because test is only used for analysis.
+				effort_before_test = self.model.effort
 
 				# save best individuals during training
-				self.model.set_weights(weights=self.best[1], model=self.model.model)
-
-				self.rng.shuffle(self.x_test)
+				self.model.set_weights(weights=self.best['weights'])
 
 				test_output = self.model.evaluate(self.x_test, self.y_test,
 											 	  initial_f_hat, initial_f_hat_seq,
 											 	  return_equation=True,
 											 	  return_decoded_list=True,
-											 	  return_fitnesses=True)
+											 	  return_errors=True)
+
+				# Don't count effort to evaluated test
+				# because test is only used for analysis.
+				self.model.effort = effort_before_test
 
 				row = [gen,
 					   self.target_index,
-					   self.best[3],
-					   self.best[0],
-					   test_output['fitness_best'],
-					   self.best[4],
-					   self.best[5],
-					   self.model.FLoPs]
+					   self.best['fitness'],
+					   self.best['val error'],
+					   test_output['error_best'],
+					   self.best['num unique errors'],
+					   self.best['num errors'],
+					   self.model.effort]
 
 				if len(self.X_train) > 1 and self.simultaneous_targets:
 
 					for i, _ in enumerate(self.X_train):
 
-						row.insert(3+i, self.best[-1][i])
+						row.insert(3+i, self.best['training errors'][i])
 
 				best_individual_data.append(row)
 
-				print('total compute', self.model.FLoPs)
+				print('total effort', self.model.effort)
 
-				# check if max number of computations have occured
-				if max_FLoPs < self.model.FLoPs:
+				# check if max number of operations have occured
+				if max_effort < self.model.effort:
 					break
 
 				if not self.simultaneous_targets:
-					if self.model.FLoPs - FLoPs_checkpoint > max_FLoPs/len(self.Y_train):
+					if self.model.effort - effort_checkpoint > max_effort/len(self.Y_train):
 
 						self.y_train = self.Y_train[self.target_index]
 						self.x_train = self.X_train[self.target_index]
 
 						self.target_index += 1
 						
-						FLoPs_checkpoint += max_FLoPs/len(self.Y_train)
+						effort_checkpoint += max_effort/len(self.Y_train)
 						print('changing target')
 
-						# At this point, it would be ideal if self.model.FLoPs is
-						# equal to FLoPs_checkpoint to allow roughly equal compute
-						# between targets. So, we cheat and reselt self.model.FLoPs
-						self.model.FLoPs = FLoPs_checkpoint
+						# At this point, it would be ideal if self.model.effort is
+						# equal to effort_checkpoint to allow roughly equal effort
+						# between targets. So, we cheat and reselt self.model.effort
+						self.model.effort = effort_checkpoint
 
 			es.result_pretty()
 
-			if max_FLoPs >= self.model.FLoPs:
+			if max_effort >= self.model.effort:
 				# restart cma-es with different seed
 				weights = self.rng.uniform(-1, 1, size=num_weights)
-				cmaes_options['seed'] += 10**7
+				cmaes_options['seed'] += 10**7	 # increase by large number, so won't accidentally reuse
 				es = cma.CMAEvolutionStrategy(weights, sigma, cmaes_options)
 
 		# Save data about the fitting
@@ -321,32 +340,41 @@ class CmaesTrainsNn():
 		df = pd.DataFrame(pop_data_summary, columns=['Generation', 'Mean Training Error', 'Mean Validation Error'])
 		df.to_csv(os.path.join(save_loc, 'pop_data_summary_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
 
-		self.best[2].save_weights(os.path.join(save_loc, 'best_ind_model_weights_rep'+str(self.rep)+'_'+self.test_dataset_name+'.h5'))
+		self.best['network'].save_weights(os.path.join(save_loc, 'best_ind_model_weights_rep'+str(self.rep)+'_'+self.test_dataset_name+'.h5'))
 
 if __name__ == '__main__':
 
-	from seq2seq_first import seq2seq
+	from TlcsrNetwork import TlcsrNetwork
 
-	s2s = seq2seq(num_encoder_tokens=2,
-				  primitive_set=['*', '+'],
-				  terminal_set=['x0'],
-				  max_decoder_seq_length=10)
+	model = TlcsrNetwork(rng=np.random.RandomState(0),
+						 num_data_encoder_inputs=2,
+						 primitive_set=['*', '+', '-'],
+						 terminal_set=['x0'],
+						 options={'use_k-expressions': True,
+						 		  'head_length': 5})
 
 	x = np.linspace(-1, 1, 20)[None, :]
 	f = lambda x: x[0]**4 + x[0]**3
 	y = f(x)
+
+	f_val = lambda x: x[0]**5
+	y_val = f_val(x)
 	
 	f_test = lambda x: x[0]
 	y_test = f_test(x)
 
 	rep = 1
-	exp = 0
+	exp = 100
 
-	fitter = CmaesTrainsNn(rep=rep, exp=exp, model=s2s,
-						   x=x, y=y,
-						   x_test=x, y_test=y_test, test_dataset_name='test')
+	fitter = Tlcsr(rep=rep, exp=exp, model=model,
+				   X_train=[x], Y_train=[y],
+				   x_val=x, y_val=y_val,
+				   x_test=x, y_test=y_test,
+				   simultaneous_targets=True,
+				   timelimit=100,
+				   test_dataset_name='test')
 
 	cmaes_options = {'popsize': 100,
 					 'tolfun': 0}  # toleration in function value
 
-	fitter.fit(max_FLoPs=10**9, sigma=0.5, cmaes_options=cmaes_options)
+	fitter.fit(max_effort=10**9, sigma=0.5, cmaes_options=cmaes_options)
