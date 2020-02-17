@@ -750,7 +750,7 @@ class Tree:
             return node_list
 
 
-    def get_num_leaves(self, return_num_nodes=False, prefix=(), num_leaves=0, num_nodes=0, subtree=None):
+    def get_num_leaves(self, num_leaves=0, num_nodes=0, subtree=None):
         """Get a number of leaves in the tree and optionally the
         number nodes below subtree (including itself).
         Each node is represented by an iterable of child indices.
@@ -760,14 +760,10 @@ class Tree:
 
         Parameters
         ----------
-        return_num_nodes : bool (default=False)
-            If true, return the num_nodes in addition to
-            the number of leaves
-        prefix : tuple (default=())
+        num_nodes : list (optional)
             For recursion. This argument keeps track of the
-            child indices. It is named prefix because it is
-            appended to with the new child nodes.
-        leaf_list : list (optional)
+            nodes already found.
+        num_leaves : list (optional)
             For recursion. This argument keeps track of the
             leaves already found.
         subtree : list of lists (default=self.tree)
@@ -795,12 +791,11 @@ class Tree:
 
         else:
             for i, st in enumerate(subtree):
-
                 if type(st) == list:
-                    num_leaves, num_nodes = self.get_num_leaves(prefix=(*prefix, i-1), num_leaves=num_leaves, num_nodes=num_nodes, subtree=st)
+                    num_leaves, num_nodes = self.get_num_leaves(num_leaves=num_leaves, num_nodes=num_nodes, subtree=st)
 
             num_nodes += 1
-            
+ 
             return num_leaves, num_nodes
 
 

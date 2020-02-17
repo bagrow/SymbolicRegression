@@ -113,11 +113,11 @@ class GeneticProgramming:
             self.timeout = float('inf')
 
 
-        if 'max_compute' in self.params:
-            self.max_compute = self.params['max_compute']
+        if 'max_effort' in self.params:
+            self.max_effort = self.params['max_effort']
 
         else:
-            self.max_compute = float('inf')
+            self.max_effort = float('inf')
         
         self.start_time = time.process_time()
 
@@ -128,7 +128,7 @@ class GeneticProgramming:
         if 'cycles_per_second' not in self.params:
             self.params['cycles_per_second'] = 0.
 
-        self.number_of_operations = 0
+        self.effort = 0
 
 
     def generate_population_ramped_half_and_half(self, size, init_max_depth):
@@ -281,9 +281,9 @@ class GeneticProgramming:
 
             self.evaluate_individual(individual, self.data)
 
-            ind_FLoPs = individual.get_number_of_operations_in_tree_eval(self.data)
+            ind_effort = individual.get_effort_tree_eval(self.data)
 
-            self.number_of_operations += ind_FLoPs
+            self.effort += ind_effort
 
 
     def evaluate_individual(self, ind, data, skip=False):
@@ -647,7 +647,7 @@ class GeneticProgramming:
                               self.best_individual.validation_fitness,
                               self.best_individual.testing_fitness,
                               time.process_time()-self.start_time,
-                              self.number_of_operations])
+                              self.effort])
 
             if i % 1000 == 0:
 
@@ -673,7 +673,7 @@ class GeneticProgramming:
                     pop_data = []
 
             # Stop, if ran out of time, but still save stuff.
-            if time.process_time() - self.start_time > self.timeout or self.max_compute < self.number_of_operations:
+            if time.process_time() - self.start_time > self.timeout or self.max_effort < self.effort:
                 break
 
         # Save generational data
