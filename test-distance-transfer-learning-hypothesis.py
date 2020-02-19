@@ -7,19 +7,31 @@
 
 import scipy.stats
 
-#Order = ["Koza-1", Koza-2, Koza-3, Nguyen-1, Nguyen-3, Nguyen-4]
+order = ['Koza-1', 'Koza-2', 'Koza-3', 'Nguyen-1', 'Nguyen-3', 'Nguyen-4']
 
-# average final test error 
-T = [0.6030790859826828, 0.44561392892601276, 0.5346375142720746,
-     0.4417043727167457, 0.8499866633253066, 1.0020545267637393]
+# average final test error
+T = {'Nguyen-4': 0.8131568716484233,
+     'Koza-1': 0.4510446926864738,
+     'Koza-2': 0.3235841595658396,
+     'Koza-3': 0.4095771357209498,
+     'Nguyen-1': 0.4586843829966759,
+     'Nguyen-3': 0.6522588283476058}
 
 # integral values 
-d= [0.666666666667, 0.666666666667, 1.0, 0.548361657292, 0.903097970065,
-    0.952380952381]
+d = {'Koza-1': 0.666666666667,
+     'Koza-2': 0.666666666667,
+     'Koza-3': 1.0,
+     'Nguyen-1': 0.548361657292,
+     'Nguyen-3': 0.903097970065,
+     'Nguyen-4': 0.952380952381}
+
+# put T and d in the same order
+T = [T[key] for key in order]
+d = [d[key] for key in order]
 
 print(scipy.stats.spearmanr(T,d))
 
 """
 Results:
-SpearmanrResult(correlation=0.6087595874350709, pvalue=0.19966018946036257)
+SpearmanrResult(correlation=0.1449427589131121, pvalue=0.7841083696021083)
 """

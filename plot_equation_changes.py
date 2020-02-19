@@ -29,7 +29,7 @@ max_train_switches = 10**10
 alg_name = 'TLC-SR'
 
 # experiment number
-exp = 24
+exp = 25
 
 # number of runs (repetitions)
 nreps = 30
@@ -150,7 +150,7 @@ for i, test_function_name in enumerate(ordered_function_names):
         plt.legend(loc='center left', handlelength=1, fontsize=8)
 
     # plt.ylim(bottom=0)
-    plt.xticks([i*10**10 for i in range(6)])
+    # plt.xticks([i*10**10 for i in range(6)])
 
 plt.subplots_adjust(bottom=0.12, left=0.15, right=0.98, top=0.9, wspace=0.05, hspace=0.25)
 fig.text(0.02, 0.5, 'Average number of equations', ha='center', va='center', rotation=90)

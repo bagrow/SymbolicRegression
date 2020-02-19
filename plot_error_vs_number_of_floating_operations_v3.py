@@ -27,7 +27,7 @@ alg_name = 'TLC-SR'
 if single_target_plot:
     exp = 23
 else:
-    exp = 24
+    exp = 25
 
 # number of runs (repetitions)
 nreps = 30
@@ -53,6 +53,8 @@ if single_target_plot:
 else:
     all_at_once = True
     single_target = False
+
+average_final_test_error = {}
 
 base_data_path = os.path.join(os.environ['EE_DATA'], 'experiment'+str(exp))
 
@@ -273,7 +275,8 @@ for test_index, test_function_name in enumerate(function_names):
         stat, pvalue = scipy.stats.mannwhitneyu(ee_test_final, gp_test_final, alternative='less')
         print(test_function_name, 'ee < gp', pvalue)
         pvalues[test_function_name] = pvalue
-        print(test_function_name, 'average final test error', np.mean(ee_test_final))
+
+        average_final_test_error[test_function_name] = np.mean(ee_test_final)
 
         # Update p-value table
         table = table.append({'Target': test_function_name, 'Test': 'ee < gp', 'p-value': pvalue, 'Significance Level': sig_level}, ignore_index=True)
@@ -311,6 +314,7 @@ for test_index, test_function_name in enumerate(function_names):
 # save the table
 gpdm.write_table_with_bold_rows(df=table, filename=os.path.join(stats_save_path, 'stats_ee_gp_floating_ops_exp'+str(exp)), bold_rows=bold_rows)
 
+print('average final test error', average_final_test_error)
 
 plt.close('all')
 width = 7.5
@@ -390,7 +394,9 @@ for i, test_function_name in enumerate(ordered_function_names):
         if i == 5:
             plt.ylim([-0.03, 1.0])
     # plt.ylim([-.03, 1.5])
-    plt.xticks(np.linspace(0, 5*10**10, 6))
+    plt.xticks(np.linspace(0, 15*10**10, 4))
+    # plt.xticks(np.linspace(0, 5*10**10, 6))
+
 
     switches = np.arange(0, max_train_switches+1, train_switch_step)
     x = []
@@ -432,7 +438,7 @@ for i, test_function_name in enumerate(ordered_function_names):
                    horizontalalignment='center',
                    transform=plt.gca().transAxes)
 
-    if not single_target_plot:
+    if not single_target_plot and genetic_programming and equation_engineer:
         pval_yscale = 0.8 if i < 5 else 0.1
 
         if pvalues[test_function_name] < 0.001:
