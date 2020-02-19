@@ -45,7 +45,9 @@ terminal_set = ['x0']
 
 if args.use_constants:
     terminal_set.append('#f')
-    terminal_set.append('const_value')
+
+    # if not args.genetic_programming:
+    #     terminal_set.append('const_value')
 
 timelimit = 100
 
@@ -122,7 +124,7 @@ y_test = f_test(x_test)
 rep = args.rep
 exp = args.exp
 
-max_effort = 5*2*10**9
+max_effort = 15*10**10
 
 rng = np.random.RandomState(args.rep+100*args.exp)
 
@@ -152,8 +154,7 @@ if args.genetic_programming:
 
         num_vars = 1
 
-        # max_effort as set above is per training dataset
-        params = {'max_effort': max_effort*len(X_train)}
+        params = {'max_effort': max_effort}
 
         gp = GP.GeneticProgrammingAfpo(rng=rng,
                                        pop_size=100,
@@ -197,8 +198,7 @@ if args.genetic_programming:
 
             num_vars = 1
 
-            # max_effort as set above is per training dataset
-            params = {'max_effort': max_effort*len(X_train)}
+            params = {'max_effort': max_effort}
 
             gp = GP.GeneticProgrammingAfpo(rng=rng,
                                            pop_size=100,
@@ -225,7 +225,7 @@ if args.genetic_programming:
 
 else:   # for TLC-SR
 
-    save_loc = os.path.join(os.environ['EE_DATA'], 'experiment'+str(args.exp))
+    save_loc = os.path.join(os.environ['TLCSR_DATA'], 'experiment'+str(args.exp))
 
     model = TlcsrNetwork(rng=np.random.RandomState(100*args.exp+args.rep),
                          num_data_encoder_inputs=2, # (xi, ei) -> data encoder
@@ -248,7 +248,7 @@ else:   # for TLC-SR
     cmaes_options = {'popsize': 100,
                      'tolfun': 0}  # tolerance in function value
 
-    fitter.fit(max_effort=max_effort*len(Y_train),
+    fitter.fit(max_effort=max_effort,
                sigma=0.5,
                cmaes_options=cmaes_options,
                save_loc=save_loc)

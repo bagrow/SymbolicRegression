@@ -70,7 +70,12 @@ class TlcsrNetwork():
 
         self.target_characters = ['START', 'STOP'] + primitive_set + terminal_set
 
-        get_onehot = lambda index, max_index=len(self.target_characters): np.eye(max_index)[index]
+        if self.use_constants:
+            get_onehot = lambda index, max_index=len(self.target_characters)+1: np.eye(max_index)[index]
+
+
+        else:
+            get_onehot = lambda index, max_index=len(self.target_characters): np.eye(max_index)[index]
 
         # Create dictionaries to map between tokens indices and one-hot vectors of tokens
         self.target_token_index = {char: i for i, char in enumerate(self.target_characters)}
@@ -102,9 +107,6 @@ class TlcsrNetwork():
             # We will also stop the NN from outputing anything
             # except terminal when constructing the tail.
             tokens_to_remove = ['START', 'STOP']
-
-            if self.use_constants:
-                tokens_to_remove.append('const_value')
 
             self.not_start_indices = list(range(len(self.target_token_index)))
             for token in tokens_to_remove:
@@ -142,6 +144,7 @@ class TlcsrNetwork():
         equation.
         """
 
+        # This excludes constant value node if used.
         self.num_decoder_tokens = len(self.target_characters)
 
         # latent_dim is the dimensionality of the
@@ -164,7 +167,10 @@ class TlcsrNetwork():
         data_encoder_outputs, data_state_h2 = data_encoder_rnn2(data_encoder_rnn1_output, initial_state=initial_states)
 
         # Define equation encoder
-        eq_encoder_inputs = Input(shape=(None, len(self.target_characters)))
+        if self.use_constants:
+            eq_encoder_inputs = Input(shape=(None, len(self.target_characters)+1))
+        else:
+            eq_encoder_inputs = Input(shape=(None, len(self.target_characters)))
         eq_encoder_rnn1 = SimpleRNN(latent_dim, return_state=True, return_sequences=True, activation='relu')
         eq_encoder_rnn2 = SimpleRNN(latent_dim, return_state=True, activation='relu')
 
@@ -180,15 +186,19 @@ class TlcsrNetwork():
 
         # Set up the decoder, which will only process one timestep at a time
         # because it will take its previous output as input.
-        decoder_inputs = Input(shape=(1, self.num_decoder_tokens))
-        decoder_rnn1 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation='relu')
-        decoder_rnn2 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation='relu')
+        if self.use_constants:
+            decoder_inputs = Input(shape=(1, self.num_decoder_tokens+1))
+
+        else:
+            decoder_inputs = Input(shape=(1, self.num_decoder_tokens))
+        decoder_rnn1 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation='relu', name='decoder1')
+        decoder_rnn2 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation='relu', name='decoder2')
 
         if self.use_constants:
             # separate constant value from other, so that 
             # the activation function can be different
-            decoder_dense_const = Dense(1, activation='tanh')
-            decoder_dense = Dense(self.num_decoder_tokens-1, activation='softmax')
+            decoder_dense_const = Dense(1, activation='tanh', name='decoder_const_out')
+            decoder_dense = Dense(self.num_decoder_tokens, activation='softmax', name='decoder_dense')
 
         else:
             decoder_dense = Dense(self.num_decoder_tokens, activation='softmax')
@@ -243,6 +253,9 @@ class TlcsrNetwork():
         # length of input to equation encoder and data encoder
         # Save as function for when we know these value
         eq_nodes = len(self.terminal_set)+len(self.primitive_set)
+
+        if self.use_constants:
+            eq_nodes += 1   # for constant-value node
 
         output_len = self.head_length+self.tail_length
         activations_in_network = lambda eq_input_len, data_input_len: eq_input_len*(eq_nodes+latent_dim*2) + data_input_len*(self.num_data_encoder_inputs +  latent_dim*2) + output_len*((2*latent_dim)*2 + eq_nodes)
@@ -369,10 +382,10 @@ class TlcsrNetwork():
             if node in self.target_token_onehot:
                 eq_encoder_input_data.append(self.target_token_onehot[node])
 
-            else:   # node is a the string of a number
+            else:   # node is a string of a number(s)
                 input_vec = self.target_token_onehot['#f']
-                index = self.target_token_index['const_value']
-                input_vec[index] = float(node)
+                # index = self.target_token_index['constant_value']
+                input_vec[-1] = float(node)
                 eq_encoder_input_data.append(input_vec)
 
         return np.array([eq_encoder_input_data])
@@ -384,7 +397,13 @@ class TlcsrNetwork():
         TODO: This could probably to hard-coded into the network."""
 
         # Prepare decoder input data that just contains the start character.
-        decoder_input_data = np.zeros((self.num_samples, 1, self.num_decoder_tokens))
+
+        if self.use_constants:
+            decoder_input_data = np.zeros((self.num_samples, 1, self.num_decoder_tokens+1))
+
+        else:
+            decoder_input_data = np.zeros((self.num_samples, 1, self.num_decoder_tokens))
+
         decoder_input_data[:, 0, self.target_token_index['START']] = 1.
 
         return decoder_input_data
@@ -437,6 +456,8 @@ class TlcsrNetwork():
         # TODO: pass to class as parameter
         period = 5
 
+        equation_strs = []
+
         # TODO: save each equation and each error
         # Important to start at t=1, so that the
         # condition for adding group score works.
@@ -445,7 +466,8 @@ class TlcsrNetwork():
 
             output = self.rewrite_equation(x, y, f_hat, f_hat_seq,
                                            return_equation=True,
-                                           return_decoded_list=True)
+                                           return_decoded_list=True,
+                                           return_equation_str=True)
 
             error = output['error']
 
@@ -453,6 +475,7 @@ class TlcsrNetwork():
                 error_best = error
 
             errors.append(error)
+            equation_strs.append(output['equation_str'])
 
             # If the network really produced an equation...
             # This check is unnecessary for k-expressions.
@@ -469,7 +492,7 @@ class TlcsrNetwork():
                 older_group_min = min(errors[-2*period:-period])
                 newer_group_min = min(errors[-period:])
 
-                if older_group_min < newer_group_min:
+                if older_group_min <= newer_group_min:
                     break
 
         if not return_equation:
@@ -478,6 +501,9 @@ class TlcsrNetwork():
         if not return_decoded_list:
             del output['decoded_list']
             del output['raw_decoded_list']
+
+        if return_equation_str:
+            output['equation_str'] = equation_strs
 
         if return_errors:
             output['errors'] = errors
@@ -531,35 +557,30 @@ class TlcsrNetwork():
         decoder_input_data = self.get_decoder_input_data()
 
         # Send through neural network
-        prediction = self.network.predict([initial_states, data_encoder_input_data, eq_encoder_input_data, decoder_input_data])
+        if self.use_constants:
+            prediction, constant_value = self.network.predict([initial_states, data_encoder_input_data, eq_encoder_input_data, decoder_input_data])
+
+        else:
+            prediction = self.network.predict([initial_states, data_encoder_input_data, eq_encoder_input_data, decoder_input_data])
 
         self.effort += self.effort_in_eval(eq_input_len=len(eq_encoder_input_data[0]), 
                                             data_input_len=len(data_encoder_input_data[0]))
 
         if self.options['use_k-expressions']:
 
-            if self.use_constants:
-                # Don't pick primitives in the tail
-                for i, row in enumerate(prediction[0][0]):
-                    if i >= self.head_length:
-                        prediction[0][0, i, self.terminal_indices] += 2.
-                    else:
-                        prediction[0][0, i, self.not_start_indices] += 2.
-
-            else:
-                # Don't pick primitives in the tail
-                for i, row in enumerate(prediction[0]):
-                    if i >= self.head_length:
-                        prediction[0, i, self.terminal_indices] += 2.
-                    else:
-                        prediction[0, i, self.not_start_indices] += 2.
+            for i, row in enumerate(prediction[0]):
+                if i >= self.head_length:
+                    prediction[0, i, self.terminal_indices] += 2.
+                else:
+                    prediction[0, i, self.not_start_indices] += 2.
 
         # decoded in terms of seq2seq network -- still a k-expression
         if self.use_constants:
-            decoded_string = self.read_decoded_output(prediction[0], prediction[1])
+            decoded_string = self.read_decoded_output(outputs=prediction,
+                                                      const_outputs=constant_value)
 
         else:
-            decoded_string = self.read_decoded_output(prediction)
+            decoded_string = self.read_decoded_output(outputs=prediction)
 
         decoded_list = decoded_string.split(' ')
         
@@ -585,7 +606,7 @@ class TlcsrNetwork():
 
         # nan's can appear in the output of the network
         # if inf's are subtracted. inf's can appear when
-        # weights are too large, which is easier to to
+        # weights are too large, which is easier to do
         # with reucurrance.
         if np.any(np.isnan(prediction)):
             error = float('inf')
@@ -618,7 +639,7 @@ class TlcsrNetwork():
                     dataset = [np.vstack((y,x)).T, []]
                     t.evaluate_fitness(dataset, compute_val_error=False)
                     error = t.fitness[0]
-                    self.effort += t.get_number_of_operations_in_tree_eval(dataset)
+                    self.effort += t.get_effort_tree_eval(dataset)
 
 
         output = {'error': error}
