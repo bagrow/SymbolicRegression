@@ -62,7 +62,8 @@ class Tlcsr():
 		self.seed = 100*self.exp + self.rep + 1
 
 		self.rng = np.random.RandomState(self.seed)
-		
+		np.random.seed(self.seed) # Need this for cma to be consistent
+
 		self.model = model
 
 		self.X_train = X_train
