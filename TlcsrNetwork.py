@@ -124,13 +124,20 @@ class TlcsrNetwork():
 
             self.terminal_indices = np.array(self.terminal_indices)
 
+        if 'eq_encoder_only' not in self.options:
+            self.options['eq_encoder_only'] = False
+
+        if 'data_encoder_only' not in self.options:
+            self.options['data_encoder_only'] = False
+
         # construct the neural network
-        self.network = self.get_network()
+        self.network = self.get_network(data_encoder_only=self.options['data_encoder_only'],
+                                        eq_encoder_only=self.options['eq_encoder_only'])
 
         self.timelimit = timelimit
 
 
-    def get_network(self):
+    def get_network(self, data_encoder_only=False, eq_encoder_only=False):
         """Create the network. This network does not use
         teacher forcing, meaning that the decoder generates
         is own input data (except for the first token 'START')
@@ -142,7 +149,24 @@ class TlcsrNetwork():
         related to the current equation at each x-value as a sequence.
         The decoder outputs a one-hot vector representation of a new
         equation.
+
+        Parameters
+        ----------
+        data_encoder_only : bool
+            If true, load entire network with outputs from
+            data_encoder only. Entire network
+            is kept for loading weights. TODO: Might need to change
+            this so you don't have to keep all weights since it will
+            not be helpful in some situations.
+        eq_encoder_only : bool
+            If true, load entire network with additional outputs
+            from the eq_encoder only. Entire network
+            is kept for loading weights. TODO: Might need to change
+            this so you don't have to keep all weights since it will
+            not be helpful in some situations.
         """
+
+        assert not (data_encoder_only and eq_encoder_only), 'Both data_encoder_only and eq_encoder_only cannot be used at the same time'
 
         # This excludes constant value node if used.
         self.num_decoder_tokens = len(self.target_characters)
@@ -242,11 +266,19 @@ class TlcsrNetwork():
 
         # Define and compile newtork
         if self.use_constants:
-            network = Model([initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs], [decoder_outputs, decoder_outputs_const])
+            input_list = [initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs]
+            output_list = [decoder_outputs, decoder_outputs_const]
     
         else:
-            network = Model([initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs], decoder_outputs)
+            input_list = [initial_states, data_encoder_inputs, eq_encoder_inputs, decoder_inputs]
+            output_list = [decoder_outputs]
 
+        if data_encoder_only:
+            output_list.extend([data_state_h1, data_state_h2, data_encoder_outputs])
+        elif eq_encoder_only:
+            output_list.extend([eq_state_h1, eq_state_h2, eq_encoder_outputs])
+            
+        network = Model(input_list, output_list)
         network.compile(optimizer='rmsprop', loss='categorical_crossentropy')
 
         # calculate effort of evaluating NN based on
@@ -473,6 +505,7 @@ class TlcsrNetwork():
 
             if error < error_best:
                 error_best = error
+                equation_best = output['equation_str']
 
             errors.append(error)
             equation_strs.append(output['equation_str'])
@@ -510,8 +543,18 @@ class TlcsrNetwork():
 
         output['error_sum'] = error_sum
         output['error_best'] = error_best
+        output['equation_best'] = equation_best
 
         return output
+
+
+    def get_network_output(self,
+                           initial_states,
+                           data_encoder_input_data,
+                           eq_encoder_input_data,
+                           decoder_input_data):
+
+        return self.network.predict([initial_states, data_encoder_input_data, eq_encoder_input_data, decoder_input_data])
 
 
     def rewrite_equation(self, x, y, f_hat, f_hat_seq,
@@ -556,12 +599,22 @@ class TlcsrNetwork():
         eq_encoder_input_data = self.get_eq_encoder_input_data(f_hat_seq)
         decoder_input_data = self.get_decoder_input_data()
 
-        # Send through neural network
-        if self.use_constants:
-            prediction, constant_value = self.network.predict([initial_states, data_encoder_input_data, eq_encoder_input_data, decoder_input_data])
+        all_network_outputs = self.get_network_output(initial_states,
+                                                      data_encoder_input_data,
+                                                      eq_encoder_input_data,
+                                                      decoder_input_data)
 
+        # decoder output
+        if len(all_network_outputs) == 1:
+            prediction = all_network_outputs
         else:
-            prediction = self.network.predict([initial_states, data_encoder_input_data, eq_encoder_input_data, decoder_input_data])
+            prediction = all_network_outputs[0]
+
+        if self.use_constants:
+            constant_value = all_network_outputs[1]
+
+        extra_outputs = all_network_outputs[2:]
+        output = {key: value for key, value in zip(['state_h1', 'state_h2', 'encoder_output'], extra_outputs)}
 
         self.effort += self.effort_in_eval(eq_input_len=len(eq_encoder_input_data[0]), 
                                             data_input_len=len(data_encoder_input_data[0]))
@@ -640,9 +693,16 @@ class TlcsrNetwork():
                     t.evaluate_fitness(dataset, compute_val_error=False)
                     error = t.fitness[0]
                     self.effort += t.get_effort_tree_eval(dataset)
+            else:
+                print('ERROR: lisp is None')
+                print('decoded_list =', decoded_list)
+                exit()
+        else:
+            print('ERROR: START is in decoded_list')
+            print('decoded_list =', decoded_list)
+            exit()
 
-
-        output = {'error': error}
+        output['error'] = error
 
         if return_equation:
             # This check is if an invalid equation was generated.
@@ -842,6 +902,29 @@ class TlcsrNetwork():
                                np.zeros(layer_weights[-1].shape)]
                 layer.set_weights(new_weights)
                 start = end2
+
+
+    def get_weights(self):
+        """Get the weights of a neural network built with
+        keras. Excludes bias weights.
+        """
+
+        weights = []
+
+        for layer in self.network.layers:
+
+            layer_weights = layer.get_weights()
+
+            if len(layer_weights) == 2:
+
+                weights.extend(layer_weights[0].flatten())
+
+            elif len(layer_weights) == 3:
+
+                weights.extend(layer_weights[0].flatten())
+                weights.extend(layer_weights[1].flatten())
+
+        return weights
 
 
     def get_num_weights(self):
