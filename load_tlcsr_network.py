@@ -3,13 +3,13 @@ import pandas as pd
 
 import os
 
-def load_tlcsr_network(exp, rep, test_index, model):
+def load_tlcsr_network(exp, rep, test_index, network):
 
     filename = os.path.join(os.environ['TLCSR_DATA'], 'experiment'+str(exp), 'best_ind_model_weights_rep'+str(rep)+'_test_index'+str(test_index)+'.h5')
 
-    model.network.load_weights(filename)
+    network.load_weights(filename)
 
-    return model
+    return network
 
 
 if __name__ == '__main__':
@@ -64,10 +64,10 @@ if __name__ == '__main__':
 
             for f in function_order:
 
-                model = load_tlcsr_network(exp=exp,
-                                           rep=rep,
-                                           test_index=test_index, 
-                                           model=model)
+                model.network = load_tlcsr_network(exp=exp,
+                                                   rep=rep,
+                                                   test_index=test_index, 
+                                                   network=model.network)
 
                 # get dataset
                 x = np.linspace(-1, 1, 20)[None, :]
