@@ -80,14 +80,14 @@ else:
 
 if not args.single_target:
 
-    X_train = [gen_x_values()[None, :] for _ in range(len(functions))]
-    Y_train = [f(x) for x, f in zip(X_train, functions)]
+    X_train = [gen_x_values()[:, None] for _ in range(len(functions))]
+    Y_train = [f(x.T) for x, f in zip(X_train, functions)]
 
-    x_val = gen_x_values()[None, :]
+    x_val = gen_x_values()[:, None]
     f_val = lambda x: x[0]**4 + x[0]
-    y_val = f_val(x_val)
+    y_val = f_val(x_val.T)
 
-    x_test = gen_x_values()[None, :]
+    x_test = gen_x_values()[:, None]
 
 if args.use_benchmarks:
 
@@ -111,20 +111,20 @@ else:
 
 if args.single_target:
 
-    X_train = [np.array(sorted(np.random.uniform(-1, 1, size=20)))[None, :]]
-    Y_train = [f_test(x) for x in X_train]
+    X_train = [np.array(sorted(np.random.uniform(-1, 1, size=20)))[:, None]]
+    Y_train = [f_test(x.T) for x in X_train]
 
-    x_val = np.array(sorted(np.random.uniform(-1, 1, size=20)))[None, :]
-    y_val = f_test(x_val)
+    x_val = np.array(sorted(np.random.uniform(-1, 1, size=20)))[:, None]
+    y_val = f_test(x_val.T)
 
-    x_test = np.array(sorted(np.random.uniform(-1, 1, size=20)))[None, :]
+    x_test = np.array(sorted(np.random.uniform(-1, 1, size=20)))[:, None]
 
-y_test = f_test(x_test)
+y_test = f_test(x_test.T)
 
 rep = args.rep
 exp = args.exp
 
-max_effort = 15*10**10
+max_effort = 5*10**10
 
 rng = np.random.RandomState(args.rep+100*args.exp)
 
@@ -137,10 +137,10 @@ if args.genetic_programming:
         for i, (x_train, y_train) in enumerate(zip(X_train, Y_train)):
 
             # format datasets
-            train_dataset.append(np.array([y_train, x_train[0]]).T)
+            train_dataset.append(np.array([y_train, x_train[:, 0]]).T)
 
-        val_dataset = np.array([y_val, x_val[0]]).T
-        test_dataset = np.array([y_test, x_test[0]]).T
+        val_dataset = np.array([y_val, x_val[:, 0]]).T
+        test_dataset = np.array([y_test, x_test[:, 0]]).T
 
         output_path = os.path.join(os.environ['TLCSR_DATA'], 'experiment'+str(args.exp), 'gp')
 

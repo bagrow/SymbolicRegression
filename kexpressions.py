@@ -5,6 +5,7 @@ equations/programs are called k-expressions or karva notation.
 https://www.gepsoft.com/gepsoft/APS3KB/Chapter05/Section3/SS1.htm
 """
 
+import GeneticProgramming as GP
 from GeneticProgramming.consts import *
 
 import networkx as nx
@@ -12,36 +13,8 @@ import networkx as nx
 import collections
 
 
-def build_tree(gene, return_short_gene=False):
-    """Take list version of equation
-    and make a tree."""
-
-    # Reorganize gene into a list of lists
-    # where each sublist is from the same layer
-    # of the tree. Call this new list tree_list.
-    tree_list = [[gene[0]]]
-    tree_list_index = 0
-    current_index = 1
-
-    while current_index < len(gene):
-
-        # Get the number of nodes in the next layer.
-        num_next_layer = sum([required_children[label] for label in tree_list[tree_list_index] if label in required_children])
-
-        # In case there are extra elements in gene,
-        # check that the next level should actually
-        # exist.
-        if num_next_layer == 0:
-            break
-
-        tree_list.append(gene[current_index:current_index+num_next_layer])
-
-        current_index += num_next_layer
-        tree_list_index += 1
-
-
-    def get_location_map(gene, tree_list, i=0, j=0, k=0,
-                         prefix=(), locations={0: ()}):
+def get_location_map(gene, tree_list, i=0, j=0, k=0,
+                         prefix=(), locations=None):
         """Gets a dictionary that relates index of gene
         (list of tree labels) to the position of each
         label in the tree.
@@ -81,6 +54,9 @@ def build_tree(gene, return_short_gene=False):
             is the location (prefix).
         """
 
+        if locations is None:
+            locations = {0: ()}
+
         # if primitive
         if gene[i] in required_children:
 
@@ -102,6 +78,51 @@ def build_tree(gene, return_short_gene=False):
         locations[i] = prefix
 
         return locations
+
+
+def build_tree(gene, return_short_gene=False):
+    """Take list version of equation
+    and make a tree.
+
+    Parameters
+    ----------
+    gene : list
+        The equation as a list of labels. This
+        is the typcial form in GEP.
+    return_short_gene : bool (default=False)
+        gene with unnecessary elements removed
+
+    Returns
+    -------
+    lisp : str
+        The lisp represented by gene
+    short_gene (if return_short_gene=True) : list
+        short_gene = gene[:b] for smallest b such that
+        build_tree(short_gene) = build_tree(gene)
+    """
+
+    # Reorganize gene into a list of lists
+    # where each sublist is from the same layer
+    # of the tree. Call this new list tree_list.
+    tree_list = [[gene[0]]]
+    tree_list_index = 0
+    current_index = 1
+
+    while current_index < len(gene):
+
+        # Get the number of nodes in the next layer.
+        num_next_layer = sum([required_children[label] for label in tree_list[tree_list_index] if label in required_children])
+
+        # In case there are extra elements in gene,
+        # check that the next level should actually
+        # exist.
+        if num_next_layer == 0:
+            break
+
+        tree_list.append(gene[current_index:current_index+num_next_layer])
+
+        current_index += num_next_layer
+        tree_list_index += 1
 
     # Gets a dictionary that relates index of gene
     # (list of tree labels) to the position of each
@@ -126,7 +147,12 @@ def build_tree(gene, return_short_gene=False):
         if loc != ():
             T.add_edge(loc, loc[:-1])
 
-    lisp = to_s_expression(T, ())
+    tree = to_s_expression(T, ())
+
+    # Not using rng here so don't need to specify it
+    t = GP.Individual(rng=None, primitive_set=list(required_children.keys()), terminal_set=['#x', '#f'],
+                      tree=tree)
+    lisp = t.get_lisp_string(actual_lisp=True)
 
     if return_short_gene:
 
@@ -168,7 +194,7 @@ def to_s_expression(T, root, canonical_form=False):
     Returns
     -------
     tuple
-        A nested tuple representation of the tree.
+        A nested list representation of the tree.
     """
 
     def _make_tuple(T, root, _parent, nested):
@@ -184,7 +210,9 @@ def to_s_expression(T, root, canonical_form=False):
         # Get the neighbors of `root` that are not the parent node. We
         # are guaranteed that `root` is always in `T` by construction.
 
-        children = set(T[root]) - {_parent}
+        # T[root] are the adjacent nodes of root
+        # children are a subset of this
+        children = [n for n in T[root] if n != _parent]
 
         if len(children) == 0:
             return [T.node[root]['label']]
@@ -202,4 +230,4 @@ def to_s_expression(T, root, canonical_form=False):
     if root not in T:
         raise nx.NodeNotFound('Graph {} contains no node {}'.format(T, root))
 
-    return _make_tuple(T, root, None, None)
+    return _make_tuple(T, root, (), None)
