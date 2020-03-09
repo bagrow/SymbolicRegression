@@ -170,6 +170,9 @@ class Tlcsr():
 
 		effort_checkpoint = 0
 
+		summary_data_order = self.model.primitive_set + self.model.terminal_set + ['unique subtrees under -']
+		summary_data_table = [['generation', 'NN index', 'dataset type', 'num rewrites'] + summary_data_order]
+
 		while max_effort >= self.model.effort:
 
 			pop_data_summary = []
@@ -200,7 +203,7 @@ class Tlcsr():
 				individual_errors = []
 
 				# evaluate solutions (weights)
-				for w in solutions:
+				for nn_index, w in enumerate(solutions):
 
 					self.model.set_weights(weights=w)
 
@@ -210,12 +213,16 @@ class Tlcsr():
 						# for a particular weight configuration.
 						individual_error_row = []
 
-						for x, y in zip(self.X_train, self.Y_train):
+						for i, (x, y) in enumerate(zip(self.X_train, self.Y_train)):
 
 							output = self.model.evaluate(x, y,
 												 		 initial_f_hat, initial_f_hat_seq)
 
 							individual_error_row.append(output['error_best'])
+
+							for j, counts in enumerate(self.model.summary_data):
+								row = [gen, nn_index, 'train'+str(i), j] + [counts[key] for key in summary_data_order]
+								summary_data_table.append(row)
 
 						individual_errors.append(individual_error_row)
 
@@ -242,6 +249,11 @@ class Tlcsr():
 					val_errors.append(val_output['error_best'])
 					num_unique_errors.append(len(np.unique(val_output['errors'])))
 					num_errors.append(len(val_output['errors']))
+
+
+					for j, counts in enumerate(self.model.summary_data):
+						row = [gen, nn_index, 'validation', j] + [counts[key] for key in summary_data_order]
+						summary_data_table.append(row)
 
 				# Let CMA-ES update the weights based on
 				# the fitnesses computed during evaluation.
@@ -282,6 +294,11 @@ class Tlcsr():
 											 	  return_equation=True,
 											 	  return_decoded_list=True,
 											 	  return_errors=True)
+
+
+				for j, counts in enumerate(self.model.summary_data):
+					row = [gen, 'best', 'test', j] + [counts[key] for key in summary_data_order]
+					summary_data_table.append(row)
 
 				# Don't count effort to evaluated test
 				# because test is only used for analysis.
@@ -342,6 +359,10 @@ class Tlcsr():
 		df.to_csv(os.path.join(save_loc, 'pop_data_summary_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
 
 		self.best['network'].save_weights(os.path.join(save_loc, 'best_ind_model_weights_rep'+str(self.rep)+'_'+self.test_dataset_name+'.h5'))
+
+		df = pd.DataFrame(summary_data_table[1:], columns=summary_data_table[0])
+		df.to_csv(os.path.join(save_loc, 'lisp_summary_data_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
+
 
 if __name__ == '__main__':
 

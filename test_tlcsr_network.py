@@ -415,3 +415,30 @@ class test_with_constants():
                'decoded_list': ['+', '+', '+', '%', '+', '%', '+', '%', '%', '%', '%', '%', '*', '%', '%', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0'],
                'raw_decoded_list': ['+', '+', '+', '%', '+', '%', '+', '%', '%', '%', '%', '%', '*', '%', '%', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0', 'x0']}
         assert output == ans
+
+
+def test_get_lisp_summary():
+
+    primitive_set = ['*', '+', '-']
+    terminal_set = ['x0', '#f']
+
+    lisps = ['x0',
+             '1',
+             '(* x0 x0)',
+             '(- x0 x0)',
+             '(- x0 (+ x0 x0))']
+
+    answers = [{'*': 0, '+': 0, '-': 0, 'x0': 1, '#f': 0, 'unique subtrees under -': 0},
+               {'*': 0, '+': 0, '-': 0, 'x0': 0, '#f': 1, 'unique subtrees under -': 0},
+               {'*': 1, '+': 0, '-': 0, 'x0': 2, '#f': 0, 'unique subtrees under -': 0},
+               {'*': 0, '+': 0, '-': 1, 'x0': 2, '#f': 0, 'unique subtrees under -': 0},
+               {'*': 0, '+': 1, '-': 1, 'x0': 3, '#f': 0, 'unique subtrees under -': 1}]
+
+    for lisp, ans in zip(lisps, answers):
+        output = Network.get_lisp_summary(lisp=lisp,
+                                          primitive_set=primitive_set,
+                                          terminal_set=terminal_set)
+        yield check_output, output, ans, 'Failure on '+lisp
+
+def check_output(output, ans, msg='Failure'):
+    assert output == ans, msg

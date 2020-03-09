@@ -500,6 +500,7 @@ class TlcsrNetwork():
         period = 5
 
         equation_strs = []
+        self.summary_data = []
 
         # TODO: save each equation and each error
         # Important to start at t=1, so that the
@@ -682,6 +683,7 @@ class TlcsrNetwork():
             if self.options['use_k-expressions']:
 
                 lisp, short_gene = build_tree(decoded_list, return_short_gene=True)
+                self.summary_data.append(self.get_lisp_summary(lisp, self.primitive_set, self.terminal_set))
 
             else:
 
@@ -980,8 +982,44 @@ class TlcsrNetwork():
         return num_weights
 
 
-if __name__ == '__main__':
+    @staticmethod
+    def get_lisp_summary(lisp, primitive_set, terminal_set):
 
+        counts = {key: 0 for key in primitive_set + terminal_set}
+        counts['unique subtrees under -'] = 0
+
+        for char in lisp.split(' '):
+
+            char = char.replace(')', '').replace('(', '')
+
+            if '#f' in terminal_set and char not in primitive_set + terminal_set:
+                counts['#f'] += 1
+            else:
+                counts[char] += 1
+
+        
+        if counts['-'] > 0:
+            t = GP.Tree(rng=None, primitive_set=primitive_set, terminal_set=terminal_set,
+                        tree=lisp, actual_lisp=True)
+            
+            node_map = t.get_node_map()
+            
+            # node_map['-'] = set of locations with - label
+            for loc in node_map['-']:
+                
+                loc_left = (*loc, 0)
+                loc_right = (*loc, 1)
+                
+                lisp_left = t.get_lisp_string(subtree=t.select_subtree(loc_left))
+                lisp_right = t.get_lisp_string(subtree=t.select_subtree(loc_right))
+                
+                if lisp_left != lisp_right:
+                    counts['unique subtrees under -'] += 1
+
+        return counts
+
+
+if __name__ == '__main__':
 
     options = {'use_k-expressions': True,
                'head_length': 3}    
