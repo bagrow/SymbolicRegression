@@ -19,22 +19,30 @@ class Tlcsr():
 		----------
 		model : TlcsrNetwork
 			The model that will be trained by CMA-ES
-		X_train : np.array
+		X_train : list of np.array
 			The input data to {f_1, ..., f_m}.
-		Y_train : np.array
+			In each element of the list,
+			each column is one variable.
+		Y_train : list of np.array
 			The output data to {f_1, ..., f_m}.
+			In each element of the list,
+			is a column array.
 		x_val : np.array
 			The input validation data to some
 			function (not {f_1, ..., f_m}).
+			Each column is one variable.
 		y_val : np.array
 			The output validation data to some
 			function (not {f_1, ..., f_m}).
+			Shape is column array.
 		x_test : np.array
 			The input test data to some
 			function (not {f_1, ..., f_m}).
+			Each column is one variable.
 		y_test : np.array
 			The output test data to some
 			function (not {f_1, ..., f_m}).
+			Shape is column array.
 		test_dataset_name : str
 			The name of the test data. This will appear
 			in the name of the output files.
@@ -46,15 +54,25 @@ class Tlcsr():
 		options : dict
 			Additional options.
 			use_k-epxressions : bool
+			save_pop_summary : bool
 		"""
 
 		self.simultaneous_targets = simultaneous_targets
 
 		if options is None:
-			self.options = {'use_k-expressions': False}
+			self.options = {}
 
 		else:
 			self.options = options
+
+		if 'save_pop_summary' not in options:
+			self.options['save_pop_summary'] = False
+
+		if 'use_k-expressions' not in options:
+			self.options['use_k-expressions'] = False
+
+		if 'save_lisp_summary' not in options:
+			self.options['save_lisp_summary'] = False
 
 		self.rep = rep
 		self.exp = exp
@@ -66,8 +84,13 @@ class Tlcsr():
 
 		self.model = model
 
-		self.X_train = X_train
-		self.Y_train = Y_train
+		# Pick 5 so that the length of this
+		# is correct. This choice will be
+		# randomized before each generation.
+		self.X_train = X_train[:5]
+		self.Y_train = Y_train[:5]
+
+		self.all_train_datasets = np.array([(x, y) for x, y in zip(X_train, Y_train)])
 
 		# The following is import when using
 		# multiple target functions but not
@@ -170,12 +193,14 @@ class Tlcsr():
 
 		effort_checkpoint = 0
 
-		summary_data_order = self.model.primitive_set + self.model.terminal_set + ['unique subtrees under -']
-		summary_data_table = [['generation', 'NN index', 'dataset type', 'num rewrites'] + summary_data_order]
+		if self.options['save_lisp_summary']:
+			summary_data_order = self.model.primitive_set + self.model.terminal_set + ['unique subtrees under -', '- simplified']
+			summary_data_table = [['generation', 'NN index', 'dataset type', 'num rewrites'] + summary_data_order]
 
 		while max_effort >= self.model.effort:
 
-			pop_data_summary = []
+			if self.options['save_pop_summary']:
+				pop_data_summary = [['Generation', 'individual index', *['train'+str(i) for i in range(len(self.X_train))], 'validation']]
 
 			while not es.stop():
 
@@ -202,8 +227,19 @@ class Tlcsr():
 				# for all weight configuration in solutions.
 				individual_errors = []
 
+				# pick datasets for this generation
+				if 5 != len(self.all_train_datasets):
+					indices = self.rng.choice(len(self.all_train_datasets), 5, replace=False)
+
+					self.X_train = [x for x, y in self.all_train_datasets[indices]]
+					self.Y_train = [y for x, y in self.all_train_datasets[indices]]
+
+
 				# evaluate solutions (weights)
 				for nn_index, w in enumerate(solutions):
+
+					if self.options['save_pop_summary']:
+						row_pop_data_summary = [gen, nn_index]
 
 					self.model.set_weights(weights=w)
 
@@ -220,9 +256,13 @@ class Tlcsr():
 
 							individual_error_row.append(output['error_best'])
 
-							for j, counts in enumerate(self.model.summary_data):
-								row = [gen, nn_index, 'train'+str(i), j] + [counts[key] for key in summary_data_order]
-								summary_data_table.append(row)
+							if self.options['save_pop_summary']:
+								row_pop_data_summary.append(output['error_best'])
+
+							if self.options['save_lisp_summary']:
+								for j, counts in enumerate(self.model.summary_data):
+									row = [gen, nn_index, 'train'+str(i), j] + [counts[key] for key in summary_data_order]
+									summary_data_table.append(row)
 
 						individual_errors.append(individual_error_row)
 
@@ -250,10 +290,14 @@ class Tlcsr():
 					num_unique_errors.append(len(np.unique(val_output['errors'])))
 					num_errors.append(len(val_output['errors']))
 
+					if self.options['save_pop_summary']:
+						row_pop_data_summary.append(val_output['error_best'])
+						pop_data_summary.append(row_pop_data_summary)
 
-					for j, counts in enumerate(self.model.summary_data):
-						row = [gen, nn_index, 'validation', j] + [counts[key] for key in summary_data_order]
-						summary_data_table.append(row)
+					if self.options['save_lisp_summary']:
+						for j, counts in enumerate(self.model.summary_data):
+							row = [gen, nn_index, 'validation', j] + [counts[key] for key in summary_data_order]
+							summary_data_table.append(row)
 
 				# Let CMA-ES update the weights based on
 				# the fitnesses computed during evaluation.
@@ -277,8 +321,6 @@ class Tlcsr():
 
 					print('new best', self.best['val error'])
 
-				gen += 1
-
 				# update number of operations
 				self.model.effort += cma_ops_per_gen
 
@@ -296,9 +338,10 @@ class Tlcsr():
 											 	  return_errors=True)
 
 
-				for j, counts in enumerate(self.model.summary_data):
-					row = [gen, 'best', 'test', j] + [counts[key] for key in summary_data_order]
-					summary_data_table.append(row)
+				if self.options['save_lisp_summary']:
+					for j, counts in enumerate(self.model.summary_data):
+						row = [gen, 'best', 'test', j] + [counts[key] for key in summary_data_order]
+						summary_data_table.append(row)
 
 				# Don't count effort to evaluated test
 				# because test is only used for analysis.
@@ -343,6 +386,8 @@ class Tlcsr():
 						# between targets. So, we cheat and reselt self.model.effort
 						self.model.effort = effort_checkpoint
 
+				gen += 1
+
 			es.result_pretty()
 
 			if max_effort >= self.model.effort:
@@ -355,13 +400,15 @@ class Tlcsr():
 		df = pd.DataFrame(best_individual_data[1:], columns=best_individual_data[0])
 		df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
 
-		df = pd.DataFrame(pop_data_summary, columns=['Generation', 'Mean Training Error', 'Mean Validation Error'])
-		df.to_csv(os.path.join(save_loc, 'pop_data_summary_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
+		if self.options['save_pop_summary']:
+			df = pd.DataFrame(pop_data_summary[1:], columns=pop_data_summary[0])
+			df.to_csv(os.path.join(save_loc, 'pop_data_summary_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
 
 		self.best['network'].save_weights(os.path.join(save_loc, 'best_ind_model_weights_rep'+str(self.rep)+'_'+self.test_dataset_name+'.h5'))
 
-		df = pd.DataFrame(summary_data_table[1:], columns=summary_data_table[0])
-		df.to_csv(os.path.join(save_loc, 'lisp_summary_data_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
+		if self.options['save_lisp_summary']:
+			df = pd.DataFrame(summary_data_table[1:], columns=summary_data_table[0])
+			df.to_csv(os.path.join(save_loc, 'lisp_summary_data_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
 
 
 if __name__ == '__main__':

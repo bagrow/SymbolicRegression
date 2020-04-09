@@ -2,6 +2,7 @@ import GeneticProgramming as GP
 from GeneticProgramming.consts import *
 from kexpressions import build_tree
 from GeneticProgramming.protected_functions import *
+import create_dataset_from_function as cdff
 
 from keras.models import Model
 from keras.layers import Input, SimpleRNN, Dense, Lambda
@@ -129,6 +130,9 @@ class TlcsrNetwork():
 
             self.terminal_indices = np.array(self.terminal_indices)
 
+        if 'save_lisp_summary' not in self.options:
+            self.options['save_lisp_summary'] = False
+
         if 'eq_encoder_only' not in self.options:
             self.options['eq_encoder_only'] = False
 
@@ -140,6 +144,9 @@ class TlcsrNetwork():
                                         eq_encoder_only=self.options['eq_encoder_only'])
 
         self.timelimit = timelimit
+
+        if self.options['save_lisp_summary']:
+            self.summary_data = []
 
 
     def get_network(self, data_encoder_only=False, eq_encoder_only=False):
@@ -377,7 +384,7 @@ class TlcsrNetwork():
         x : np.array (num observations by num input vars)
             The x data. Input data to f_hat.
             The array is shaped as (num featurs, num input vars).
-        y : np.array (num observations)
+        y : np.array (num observations row, one column)
             The y data. The desired output of f_hat.
         f_hat : function
             The approximation of the target function.
@@ -389,8 +396,8 @@ class TlcsrNetwork():
             input into the data encoder.
         """
 
-        y_hat = f_hat(x.T)
-        signed_error = y - y_hat
+        y_hat = cdff.get_y(x, f_hat)
+        signed_error = (y - y_hat).flatten()
 
         encoder_input_data = np.array([[[*x, e] for x, e in zip(x, signed_error)]])
 
@@ -463,9 +470,9 @@ class TlcsrNetwork():
         Parameters
         ----------
         x : np.array
-            x-data from dataset
+            x-data from dataset (one column for each input variable)
         y : np.array
-            y-data from dataset
+            y-data from dataset (one column)
         f_hat : function
             The initial approximation of dataset.
         f_hat_seq : list
@@ -493,6 +500,7 @@ class TlcsrNetwork():
 
         # Get the lowest error.
         error_best = float('inf')
+        equation_best = None
 
         # We will keep track of the min error
         # over the previous period scores.
@@ -500,7 +508,9 @@ class TlcsrNetwork():
         period = 5
 
         equation_strs = []
-        self.summary_data = []
+
+        if self.options['save_lisp_summary']:
+            self.summary_data = []
 
         # TODO: save each equation and each error
         # Important to start at t=1, so that the
@@ -579,9 +589,9 @@ class TlcsrNetwork():
         Parameters
         ----------
         x : np.array
-            The input data for the dataset.
+            The input data for the dataset. (one column for each input var)
         y : np.array
-            The output data for the dataset.
+            The output data for the dataset. (one column)
         f_hat : function
             The current approximation of the dataset.
         f_hat_seq : list
@@ -683,7 +693,9 @@ class TlcsrNetwork():
             if self.options['use_k-expressions']:
 
                 lisp, short_gene = build_tree(decoded_list, return_short_gene=True)
-                self.summary_data.append(self.get_lisp_summary(lisp, self.primitive_set, self.terminal_set))
+
+                if self.options['save_lisp_summary']:
+                    self.summary_data.append(self.get_lisp_summary(lisp, self.primitive_set, self.terminal_set))
 
             else:
 
@@ -704,7 +716,7 @@ class TlcsrNetwork():
                     t = GP.Individual(rng=None, primitive_set=self.primitive_set, terminal_set=self.terminal_set,
                                       tree=lisp, actual_lisp=True)
 
-                    dataset = [np.vstack((y,x[:,0])).T, []]
+                    dataset = [cdff.combine_x_y(x,y), []]
                     t.evaluate_fitness(dataset, compute_val_error=False)
                     error = t.fitness[0]
                     self.f_hat = t.f
@@ -987,6 +999,7 @@ class TlcsrNetwork():
 
         counts = {key: 0 for key in primitive_set + terminal_set}
         counts['unique subtrees under -'] = 0
+        counts['- simplified'] = 0
 
         for char in lisp.split(' '):
 
@@ -999,19 +1012,42 @@ class TlcsrNetwork():
 
         
         if counts['-'] > 0:
-            t = GP.Tree(rng=None, primitive_set=primitive_set, terminal_set=terminal_set,
-                        tree=lisp, actual_lisp=True)
+            i = GP.Individual(rng=None, primitive_set=primitive_set, terminal_set=terminal_set,
+                              tree=lisp, actual_lisp=True)
             
-            node_map = t.get_node_map()
+            node_map = i.get_node_map()
+
+            # get order function of loc's
+            order = lambda tup: 2**len(tup) + int(''.join(map(str, tup)), base=2) if tup is not () else 1
             
+            # keep track of zeros found
+            zeros = []
+
             # node_map['-'] = set of locations with - label
-            for loc in node_map['-']:
-                
+            for loc in sorted(node_map['-'], key=order):
+
+                # check if loc is inside a zero
+                inside = False
+                for z in zeros:
+                    if GP.Tree.is_elder(elder=z, child=loc):
+                        inside = True
+                        break
+
+                # see if loc is a zero
+                if not inside:
+                    subtree = i.select_subtree(loc)
+                    f_str = 'lambda x: '+i.convert_lisp_to_standard_for_function_creation()
+                    f = eval(f_str)
+                    x = np.linspace(-1, 1, 1000)
+                    if np.abs(f(x)) <= 10**(-9):
+                        counts['- simplified'] += 1
+                        zeros.append(loc)
+
                 loc_left = (*loc, 0)
                 loc_right = (*loc, 1)
                 
-                lisp_left = t.get_lisp_string(subtree=t.select_subtree(loc_left))
-                lisp_right = t.get_lisp_string(subtree=t.select_subtree(loc_right))
+                lisp_left = i.get_lisp_string(subtree=i.select_subtree(loc_left))
+                lisp_right = i.get_lisp_string(subtree=i.select_subtree(loc_right))
                 
                 if lisp_left != lisp_right:
                     counts['unique subtrees under -'] += 1
