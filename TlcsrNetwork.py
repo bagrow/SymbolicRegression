@@ -68,10 +68,14 @@ class TlcsrNetwork():
         self.primitive_set = primitive_set
         self.terminal_set = terminal_set
 
+        # TODO: could use 0 if constants are being used.
+        assert '-' in primitive_set, '- is used in initial guess, but it was not included'
+
         if self.use_constants:
             assert '#f' in self.terminal_set, '#f must be in terminal set when using constants'
 
         self.num_data_encoder_inputs = num_data_encoder_inputs
+
         self.num_samples = 1
 
         self.target_characters = ['START', 'STOP'] + primitive_set + terminal_set
@@ -180,6 +184,8 @@ class TlcsrNetwork():
 
         assert not (data_encoder_only and eq_encoder_only), 'Both data_encoder_only and eq_encoder_only cannot be used at the same time'
 
+        hidden_activation = 'tanh'
+
         # This excludes constant value node if used.
         self.num_decoder_tokens = len(self.target_characters)
 
@@ -196,8 +202,8 @@ class TlcsrNetwork():
 
         # Define data encoder
         data_encoder_inputs = Input(shape=(None, self.num_data_encoder_inputs))
-        data_encoder_rnn1 = SimpleRNN(latent_dim, return_state=True, return_sequences=True, activation='relu')
-        data_encoder_rnn2 = SimpleRNN(latent_dim, return_state=True, activation='relu')
+        data_encoder_rnn1 = SimpleRNN(latent_dim, return_state=True, return_sequences=True, activation=hidden_activation)
+        data_encoder_rnn2 = SimpleRNN(latent_dim, return_state=True, activation=hidden_activation)
 
         data_encoder_rnn1_output, data_state_h1 = data_encoder_rnn1(data_encoder_inputs, initial_state=initial_states)
         data_encoder_outputs, data_state_h2 = data_encoder_rnn2(data_encoder_rnn1_output, initial_state=initial_states)
@@ -207,8 +213,8 @@ class TlcsrNetwork():
             eq_encoder_inputs = Input(shape=(None, len(self.target_characters)+1))
         else:
             eq_encoder_inputs = Input(shape=(None, len(self.target_characters)))
-        eq_encoder_rnn1 = SimpleRNN(latent_dim, return_state=True, return_sequences=True, activation='relu')
-        eq_encoder_rnn2 = SimpleRNN(latent_dim, return_state=True, activation='relu')
+        eq_encoder_rnn1 = SimpleRNN(latent_dim, return_state=True, return_sequences=True, activation=hidden_activation)
+        eq_encoder_rnn2 = SimpleRNN(latent_dim, return_state=True, activation=hidden_activation)
 
         eq_encoder_rnn1_output, eq_state_h1 = eq_encoder_rnn1(eq_encoder_inputs, initial_state=initial_states)
         eq_encoder_outputs, eq_state_h2 = eq_encoder_rnn2(eq_encoder_rnn1_output, initial_state=initial_states)
@@ -227,8 +233,8 @@ class TlcsrNetwork():
 
         else:
             decoder_inputs = Input(shape=(1, self.num_decoder_tokens))
-        decoder_rnn1 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation='relu', name='decoder1')
-        decoder_rnn2 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation='relu', name='decoder2')
+        decoder_rnn1 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation=hidden_activation, name='decoder1')
+        decoder_rnn2 = SimpleRNN(2*latent_dim, return_sequences=True, return_state=True, activation=hidden_activation, name='decoder2')
 
         if self.use_constants:
             # separate constant value from other, so that 
@@ -373,9 +379,9 @@ class TlcsrNetwork():
 
         return ' '.join(decoded_string_list)
 
-
+    # new/updated function
     @staticmethod
-    def get_data_encoder_input_data(x, y, f_hat):
+    def get_data_encoder_input_data(x, y, f_hat, num_data_encoder_inputs=2):
         """Given the dataset and the current approximation of the target function,
         get the data to be input into the data encoder.
 
@@ -388,18 +394,32 @@ class TlcsrNetwork():
             The y data. The desired output of f_hat.
         f_hat : function
             The approximation of the target function.
+        num_data_encoder_inputs : int
+            The number of inputs to the data encoder.
 
         Returns
         -------
         encoder_input_data : np.array
-            A (1, num input vars, 2) shaped array that will be
+            A (1, num_data_encoder_inputs-1, 2) shaped array that will be
             input into the data encoder.
         """
 
-        y_hat = cdff.get_y(x, f_hat)
+        # if x is the wrong size, adjust
+        num_x_input = len(x[0])
+
+        if num_x_input < num_data_encoder_inputs-1:
+            x_adjusted = np.zeros((len(x),num_data_encoder_inputs-1))
+            x_adjusted[:,:num_x_input] = x.copy()
+
+        else:
+            x_adjusted = x.copy()
+
+        assert len(x_adjusted[0]) == num_data_encoder_inputs-1, 'shape of input x to get_data_encoder_input_data is incorrect'+str(len(x_adjusted[0]))+' '+str(num_data_encoder_inputs-1)
+
+        y_hat = cdff.get_y(x_adjusted, f_hat)
         signed_error = (y - y_hat).flatten()
 
-        encoder_input_data = np.array([[[*x, e] for x, e in zip(x, signed_error)]])
+        encoder_input_data = np.array([[[*xi, ei] for xi, ei in zip(x_adjusted, signed_error)]])
 
         return encoder_input_data
 
@@ -617,7 +637,7 @@ class TlcsrNetwork():
         """
 
         # Get input ready.
-        data_encoder_input_data = self.get_data_encoder_input_data(x, y, f_hat)
+        data_encoder_input_data = self.get_data_encoder_input_data(x, y, f_hat, self.num_data_encoder_inputs)
         eq_encoder_input_data = self.get_eq_encoder_input_data(f_hat_seq)
         decoder_input_data = self.get_decoder_input_data()
 
@@ -686,6 +706,11 @@ class TlcsrNetwork():
         if np.any(np.isnan(prediction)):
             error = float('inf')
 
+        elif 'START' in decoded_list:
+            print('ERROR: START is in decoded_list')
+            print('decoded_list =', decoded_list)
+            exit()
+
         # if START is in decoded list, keep the penalty already computed
         # otherwise get the actual error
         elif 'START' not in decoded_list:
@@ -714,9 +739,19 @@ class TlcsrNetwork():
                 if self.is_equation(lisp):
 
                     t = GP.Individual(rng=None, primitive_set=self.primitive_set, terminal_set=self.terminal_set,
-                                      tree=lisp, actual_lisp=True)
+                                      tree=lisp, actual_lisp=True, num_vars=self.num_data_encoder_inputs-1)
 
-                    dataset = [cdff.combine_x_y(x,y), []]
+                    # if x is the wrong size, adjust
+                    num_x_input = len(x[0])
+
+                    if num_x_input < self.num_data_encoder_inputs-1:
+                        x_adjusted = np.zeros((len(x),self.num_data_encoder_inputs-1))
+                        x_adjusted[:,:num_x_input] = x.copy()
+
+                    else:
+                        x_adjusted = x.copy()
+
+                    dataset = [cdff.combine_x_y(x_adjusted,y), []]
                     t.evaluate_fitness(dataset, compute_val_error=False)
                     error = t.fitness[0]
                     self.f_hat = t.f
@@ -732,8 +767,7 @@ class TlcsrNetwork():
                 print('decoded_list =', decoded_list)
                 exit()
         else:
-            print('ERROR: START is in decoded_list')
-            print('decoded_list =', decoded_list)
+            print('Should not get to this point in code')
             exit()
 
         output['error'] = error
@@ -832,10 +866,10 @@ class TlcsrNetwork():
 
         try:
             t = GP.Tree(rng=self.rng, primitive_set=self.primitive_set, terminal_set=self.terminal_set,
-                        tree=eq, actual_lisp=True)
+                        tree=eq, actual_lisp=True, num_vars=self.num_data_encoder_inputs-1)
             f = eval('lambda x:' + t.convert_lisp_to_standard_for_function_creation())
 
-            f([1])  # try to evaluate it at x=1. 
+            f([1]*(self.num_data_encoder_inputs-1))  # try to evaluate it at x=1. 
             self.f_hat = f
             return True
 

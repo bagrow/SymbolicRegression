@@ -10,11 +10,46 @@ from GeneticProgramming.GeneticProgrammingAfpoManyTargetData import GeneticProgr
 import create_dataset_from_function as cdff
 
 import numpy as np
-
+import pandas as pd
+import pmlb
 
 import argparse
 import os
 import copy
+
+def get_x_y_data(targets, key):
+
+	if 'f' in targets[key]:
+
+		if targets[key]['spacing'] == 'random':
+			x = np.array([[np.random.uniform(targets[key]['a'], targets[key]['a']) for _ in range(targets[key]['num_inputs'])] for _ in range(targets[key]['num_points'])])
+
+		else:
+			print('target spacing '+str(targets[key]['spacing'])+' not implemented')
+			exit()
+
+		y = cdff.get_y(x, targets[key]['f'])
+
+	elif 'file' in targets[key]:
+
+		path = os.path.join(os.environ['DATASET_PATH'], targets[key]['file'])
+
+		data = pd.read_csv(path)
+
+		x = data.iloc[:,:-1].values
+
+		# keep the : after -1 to get column vec
+		y = data.iloc[:,-1:].values
+
+	elif 'pmlb' in targets[key]: 
+		x, y = pmlb.fetch_data(key, return_X_y=True)
+		y = y[:,None]
+
+	else:
+		print('Not implemented!!! in get_x_y_data')
+		exit()
+
+	return x, y
 
 parser = argparse.ArgumentParser()
 
@@ -27,7 +62,8 @@ parser.add_argument('--simultaneous_targets', action='store_true', help='Use mul
 parser.add_argument('--use_constants', action='store_true', help='Included constants with two nodes: one for one-hot and other for constant value')
 parser.add_argument('--inconsistent_x', action='store_true', help='Random (uniformly dist) selection of x-values')
 # parser.add_argument('--shuffle_x', action='store_true', help='Shuffle x-values before input into NN')
-parser.add_argument('--use_benchmarks', action='store_true', help='Use the benchmark functions for datasets')
+parser.add_argument('--use_old_benchmarks', action='store_true', help='Use the benchmark functions for datasets')
+parser.add_argument('--use_new_benchmarks', action='store_true', help='Use the new benchmarks')
 parser.add_argument('--test_index', type=int, help='Index of the target function to use to create test dataset. Others are used for training if --simultaneous_targets')
 parser.add_argument('--max_rewrites', type=int, help='Set the max number of equation rewrites')
 parser.add_argument('--constant_targets', action='store_true', help='Use constant regression datasets.')
@@ -41,14 +77,36 @@ assert args.test_index is not None, 'Must use --test_index'
 
 assert (args.simultaneous_targets and args.single_target) == False, 'Cannot use --simultaneous_targets and --single_target at the same time'
 
-assert (args.use_benchmarks and args.constant_targets) == False, 'Cannot use --use_benchmarks and --constant_targets as the same time'
+assert (args.use_old_benchmarks and args.constant_targets) == False, 'Cannot use --use_old_benchmarks and --constant_targets as the same time'
 
 assert (args.lines and args.constant_targets) == False, 'Cannot use --lines and --constant_targets at the same time'
 
-assert (args.lines and args.use_benchmarks) == False, 'Cannot use --lines and --use_benchmarks at the same time'
+assert (args.lines and args.use_old_benchmarks) == False, 'Cannot use --lines and --use_old_benchmarks at the same time'
 
 # essentially not xor
 assert (args.lines) == (args.num_datasets is not None), 'Connot use --lines without --num_datasets'
+
+
+new_target_order = ['Vladislavleva-4',
+					'energy efficiency cooling',
+					'energy efficiency heating',
+					'boston housing',
+					'648_fri_c1_250_50', 
+					'654_fri_c0_500_10', 
+					'657_fri_c2_250_10']
+
+targets = {'Vladislavleva-4': {'f': lambda x: 10/(5 + (x[0]-3)**2 + (x[1]-3)**2 + (x[2]-3)**2 + (x[3]-3)**2 + (x[4]-3)**2),
+							  'a': -0.25,
+							  'b': 6.35,
+							  'num_points': 5000,
+							  'num_inputs': 5,
+							  'spacing': 'random'},
+		   'energy efficiency cooling': {'file': 'energy_efficiency_heating.csv'},
+		   'energy efficiency heating': {'file': 'energy_efficiency_heating.csv'},
+		   'boston housing': {'file': 'boston_housing.csv'},
+		   '648_fri_c1_250_50': {'pmlb': True},
+		   '654_fri_c0_500_10': {'pmlb': True},
+		   '657_fri_c2_250_10': {'pmlb': True}}
 
 if args.use_kexpressions:
 	options = {'use_k-expressions': True,
@@ -57,18 +115,9 @@ if args.use_kexpressions:
 else:
 	options = None
 
-primitive_set = ['*', '+', '-']
-terminal_set = ['x0']
-
-if args.use_constants:
-	terminal_set.append('#f')
-
-	# if not args.genetic_programming:
-	#     terminal_set.append('const_value')
-
 timelimit = args.max_rewrites if args.max_rewrites is not None else 100
 
-if args.use_benchmarks:
+if args.use_old_benchmarks:
 	function_strs = ['x[0]**6 + x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]',   # Nguyen-4
 					 'x[0]**4 + x[0]**3 + x[0]**2 + x[0]',   # Koza-1
 					 'x[0]**5 - 2*x[0]**3 + x[0]',   # Koza-2
@@ -107,25 +156,26 @@ else:
 						   'x[0]**2 + x[0]',
 						   'x[0]**3']
 
+if not args.use_new_benchmarks:
+	if args.use_old_benchmarks or args.constant_targets or args.lines:
+		f_test_str = function_strs[args.test_index]
+		f_test = eval('lambda x: '+f_test_str)
 
-if args.use_benchmarks or args.constant_targets or args.lines:
-	f_test_str = function_strs[args.test_index]
+	else:
 
-else:
+		test_function_strs = ['x[0]**6 + x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]' # Nguyen-4
+							  'x[0]**4 + x[0]**3 + x[0]**2 + x[0]',   # Koza-1
+							  'x[0]**5 - 2*x[0]**3 + x[0]',   # Koza-2
+							  'x[0]**6 - 2*x[0]**4 + x[0]**2',    # Koza-3
+							  'x[0]**3 + x[0]**2 + x[0]', # Nguyen-1
+							  'x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]', # Nguyen-3
+							 ]
 
-	test_function_strs = ['x[0]**6 + x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]' # Nguyen-4
-						  'x[0]**4 + x[0]**3 + x[0]**2 + x[0]',   # Koza-1
-						  'x[0]**5 - 2*x[0]**3 + x[0]',   # Koza-2
-						  'x[0]**6 - 2*x[0]**4 + x[0]**2',    # Koza-3
-						  'x[0]**3 + x[0]**2 + x[0]', # Nguyen-1
-						  'x[0]**5 + x[0]**4 + x[0]**3 + x[0]**2 + x[0]', # Nguyen-3
-						 ]
+		assert 0 <= args.test_index < len(test_function_strs), '--test_index must be between 0 and '+str(len(test_function_strs)-1)
 
-	assert 0 <= args.test_index < len(test_function_strs), '--test_index must be between 0 and '+str(len(test_function_strs)-1)
+		f_test_str = test_function_strs[args.test_index]
 
-	f_test_str = test_function_strs[args.test_index]
-
-f_test = eval('lambda x: '+f_test_str)
+		f_test = eval('lambda x: '+f_test_str)
 
 if args.single_target:
 
@@ -137,6 +187,8 @@ if args.single_target:
 
 	x_test = np.array(sorted(np.random.uniform(-1, 1, size=20)))[:, None]
 
+	y_test = cdff.get_y(x_test, f_test)
+
 else:
 	if args.inconsistent_x:
 		gen_x_values = lambda: np.array(sorted(np.random.uniform(-1, 1, size=20))) 
@@ -144,12 +196,11 @@ else:
 	else:
 		gen_x_values = lambda: np.linspace(-1, 1, 20)
 
-	functions = [eval('lambda x: '+f_str) for f_str in train_function_strs]
+	if not args.use_new_benchmarks:
+		functions = [eval('lambda x: '+f_str) for f_str in train_function_strs]
 
-	if not (args.constant_targets or args.lines):
-		assert len(functions) == len(function_strs) - 1, 'len(functions) != len(function_strs) - 1'
-
-	if not args.single_target:
+		if not (args.constant_targets or args.lines):
+			assert len(functions) == len(function_strs) - 1, 'len(functions) != len(function_strs) - 1'
 
 		X_train = [gen_x_values()[:, None] for _ in range(len(functions))]
 		Y_train = [cdff.get_y(x, f) for x, f in zip(X_train, functions)]
@@ -170,20 +221,46 @@ else:
 
 		x_test = gen_x_values()[:, None]
 
-y_test = cdff.get_y(x_test, f_test)
+		y_test = cdff.get_y(x_test, f_test)
 
-# check all data is expected sizes and shapes
-for i, x in enumerate(X_train):
-	assert x.shape == (20,1), 'X_train['+str(i)+'].shape != (20, 1)'
+	else:
 
-assert x_val.shape == (20,1), 'x_val.shape != (20, 1)'
-assert x_val.shape == (20,1), 'x_val.shape != (20, 1)'
+		assert 0 <= args.test_index < len(new_target_order), '--test_index must be between 0 and 6 (inclusive) when using --use_new_benchmarks'
 
-for i, y in enumerate(Y_train):
-	assert y.shape == (20,1), 'Y_train['+str(i)+'].shape != (20, 1)'
+		test_name = new_target_order[args.test_index]
 
-assert y_val.shape == (20,1), 'y_val.shape != (20, 1)'
-assert y_val.shape == (20,1), 'y_val.shape != (20, 1)'
+		x_test, y_test = get_x_y_data(targets, test_name)
+
+		new_target_order_no_test = [target for target in new_target_order if target != test_name]
+
+		val_name = np.random.choice(new_target_order_no_test)
+
+		x_val, y_val = get_x_y_data(targets, val_name)
+
+		new_train_targets = [target for target in new_target_order_no_test if target != val_name]
+
+		X_train = []
+		Y_train = []
+
+		for target_name in new_train_targets:
+			x, y = get_x_y_data(targets, target_name)
+
+			X_train.append(x)
+			Y_train.append(y)
+
+if not args.use_new_benchmarks:
+	# check all data is expected sizes and shapes
+	for i, x in enumerate(X_train):
+		assert x.shape == (20,1), 'X_train['+str(i)+'].shape != (20, 1)'
+
+	assert x_val.shape == (20,1), 'x_val.shape != (20, 1)'
+	assert x_val.shape == (20,1), 'x_val.shape != (20, 1)'
+
+	for i, y in enumerate(Y_train):
+		assert y.shape == (20,1), 'Y_train['+str(i)+'].shape != (20, 1)'
+
+	assert y_val.shape == (20,1), 'y_val.shape != (20, 1)'
+	assert y_val.shape == (20,1), 'y_val.shape != (20, 1)'
 
 rep = args.rep
 exp = args.exp
@@ -191,6 +268,18 @@ exp = args.exp
 max_effort = 5*10**10
 
 rng = np.random.RandomState(args.rep+100*args.exp)
+
+num_inputs_per_dataset = [len(x_test[0])] + [len(x_val[0])] + [len(x[0]) for x in X_train]
+num_data_encoder_inputs = max(num_inputs_per_dataset)+1
+
+primitive_set = ['*', '+', '-', '%', 'sin', 'cos']
+terminal_set = ['x'+str(i) for i in range(num_data_encoder_inputs-1)]
+
+if args.use_constants:
+	terminal_set.append('#f')
+
+	# if not args.genetic_programming:
+	#     terminal_set.append('const_value')
 
 if args.genetic_programming:
 
@@ -216,7 +305,7 @@ if args.genetic_programming:
 
 		output_file = 'fitness_data_rep' + str(args.rep) + '_train_all_at_once_test_index'+str(args.test_index)+'.csv'
 
-		num_vars = 1
+		num_vars = num_data_encoder_inputs-1
 
 		params = {'max_effort': max_effort}
 
@@ -260,7 +349,7 @@ if args.genetic_programming:
 
 			output_file = 'fitness_data_rep' + str(args.rep) + '_train'+str(args.test_index)+'_test_index'+str(args.test_index)+'.csv'
 
-			num_vars = 1
+			num_vars = num_data_encoder_inputs-1
 
 			params = {'max_effort': max_effort}
 
@@ -292,7 +381,7 @@ else:   # for TLC-SR
 	save_loc = os.path.join(os.environ['TLCSR_DATA'], 'experiment'+str(args.exp))
 
 	model = TlcsrNetwork(rng=np.random.RandomState(100*args.exp+args.rep),
-						 num_data_encoder_inputs=2, # (xi, ei) -> data encoder
+						 num_data_encoder_inputs=num_data_encoder_inputs, # (xi, ei) -> data encoder
 						 primitive_set=primitive_set,
 						 terminal_set=terminal_set,
 						 use_constants=args.use_constants,

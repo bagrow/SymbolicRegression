@@ -90,7 +90,7 @@ class Tlcsr():
 		self.X_train = X_train[:5]
 		self.Y_train = Y_train[:5]
 
-		self.all_train_datasets = np.array([(x, y) for x, y in zip(X_train, Y_train)])
+		self.all_train_datasets = [(x, y) for x, y in zip(X_train, Y_train)]
 
 		# The following is import when using
 		# multiple target functions but not
