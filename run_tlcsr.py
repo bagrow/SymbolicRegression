@@ -1,4 +1,4 @@
-"""Train seq2seq model (input=dataset and previous equation, output=equation) to do
+f"""Train seq2seq model (input=dataset and previous equation, output=equation) to do
 symbolic regression.
 """
 
@@ -19,6 +19,7 @@ import argparse
 import os
 import copy
 import itertools
+import operator
 
 def get_x_y_data(targets, key):
 
@@ -74,7 +75,15 @@ def get_x_y_data(targets, key):
 		print('Not implemented!!! in get_x_y_data')
 		exit()
 
-	return x, y
+	# sort by x[:,0] then x[:,1] and return indices to perform sort
+	ind = np.lexsort((x[:,1], x[:,0]))
+	x_sorted = x[ind]
+	y_sorted = y[ind]
+
+	get_row_set = lambda col1, col2: set([(*a, *b) for a,b in zip(col1,col2)])
+	assert get_row_set(x,y) == get_row_set(x_sorted, y_sorted), 'Not the same dataset (not just reordered)!'
+
+	return x_sorted, y_sorted
 
 parser = argparse.ArgumentParser()
 
@@ -88,7 +97,8 @@ parser.add_argument('--use_constants', action='store_true', help='Included const
 parser.add_argument('--inconsistent_x', action='store_true', help='Random (uniformly dist) selection of x-values')
 # parser.add_argument('--shuffle_x', action='store_true', help='Shuffle x-values before input into NN')
 parser.add_argument('--use_old_benchmarks', action='store_true', help='Use the benchmark functions for datasets')
-parser.add_argument('--use_new_benchmarks', action='store_true', help='Use the new benchmarks')
+parser.add_argument('--use_dim2_benchmarks', action='store_true', help='Use the new dim=2 benchmarks')
+parser.add_argument('--use_dim5_benchmarks', action='store_true', help='Use the new dim=5 benchmarks')
 parser.add_argument('--test_index', type=int, help='Index of the target function to use to create test dataset. Others are used for training if --simultaneous_targets')
 parser.add_argument('--max_rewrites', type=int, help='Set the max number of equation rewrites')
 parser.add_argument('--constant_targets', action='store_true', help='Use constant regression datasets.')
@@ -128,21 +138,29 @@ assert (args.lines) == (args.num_datasets is not None), 'Connot use --lines with
 # 					'654_fri_c0_500_10', 
 # 					'657_fri_c2_250_10']
 
-new_target_order = ['687_sleuth_ex1605',
-					'210_cloud',
-					'Vladislavleva-4',
-					'609_fri_c0_1000_5',
-					'612_fri_c1_1000_5',
-					'656_fri_c1_100_5',
-					'599_fri_c2_1000_5']
+if args.use_dim5_benchmarks:
+	new_target_order = ['687_sleuth_ex1605',
+						'210_cloud',
+						'Vladislavleva-4',
+						'609_fri_c0_1000_5',
+						'612_fri_c1_1000_5',
+						'656_fri_c1_100_5',
+						'599_fri_c2_1000_5']
 
-# new_target_order = ['663_rabe_266',
-# 					'Vladislavleva-7',
-# 					'519_vinnie',
-# 					'Vladislavleva-8',
-# 					'Vladislavleva-1',
-# 					'228_elusage',
-# 					'Vladislavleva-3']
+elif args.use_dim2_benchmarks:
+	new_target_order = ['663_rabe_266',
+						'Vladislavleva-7',
+						'519_vinnie',
+						'Vladislavleva-8',
+						'Vladislavleva-1',
+						'228_elusage',
+						'Vladislavleva-3']
+
+# get a single flag to use later
+if args.use_dim2_benchmarks or args.use_dim5_benchmarks:
+	use_new_benchmarks = True
+else:
+	use_new_benchmarks = False
 
 targets = {'Vladislavleva-1': {'f': lambda x: np.exp(-(x[0]-1)**2)/(1.2 + (x[1]-2.5)**2),
 							  'a': -0.2,
@@ -242,7 +260,7 @@ else:
 						   'x[0]**2 + x[0]',
 						   'x[0]**3']
 
-if not args.use_new_benchmarks:
+if not use_new_benchmarks:
 	if args.use_old_benchmarks or args.constant_targets or args.lines:
 		f_test_str = function_strs[args.test_index]
 		f_test = eval('lambda x: '+f_test_str)
@@ -265,7 +283,7 @@ if not args.use_new_benchmarks:
 
 if args.single_target:
 
-	if args.use_new_benchmarks:
+	if use_new_benchmarks:
 		assert 0 <= args.test_index < len(new_target_order), '--test_index must be between 0 and 6 (inclusive) when using --use_new_benchmarks'
 
 		dataset_name = new_target_order[args.test_index]
@@ -325,7 +343,7 @@ else:
 	else:
 		gen_x_values = lambda: np.linspace(-1, 1, 20)
 
-	if not args.use_new_benchmarks:
+	if not use_new_benchmarks:
 		functions = [eval('lambda x: '+f_str) for f_str in train_function_strs]
 
 		if not (args.constant_targets or args.lines):
@@ -354,29 +372,30 @@ else:
 
 	else:
 
-		assert 0 <= args.test_index < len(new_target_order), '--test_index must be between 0 and 6 (inclusive) when using --use_new_benchmarks'
+		assert 0 <= args.test_index < len(new_target_order)-1, '--test_index must be between 0 and 5 (inclusive) when using --use_dim#_benchmarks'
 
-		test_name = new_target_order[args.test_index]
-
-		x_test, y_test = get_x_y_data(targets, test_name)
-
-		new_target_order_no_test = [target for target in new_target_order if target != test_name]
-
-		# get arbitrary but consistent order for validation domain
-		rng = np.random.RandomState(0)
-
-		shuffled_function_order = copy.copy(new_target_order_no_test)
-		rng.shuffle(shuffled_function_order)
-
-		val_name = shuffled_function_order[args.rep % len(shuffled_function_order)]
-
-		# val_name = np.random.choice(new_target_order_no_test)
+		# get arbitrary but consistent validation domain
+		rng_val = np.random.RandomState(0)
+		val_index = rng_val.choice(len(new_target_order))
+		val_name = new_target_order[val_index]
 
 		x_val, y_val = get_x_y_data(targets, val_name)
-		print(targets)
-		print(val_name)
+		print('val_name', val_name)
 		print(x_val.shape, y_val.shape)
-		new_train_targets = [target for target in new_target_order_no_test if target != val_name]
+
+		new_target_order_no_val = [target for target in new_target_order if target != val_name]
+
+		assert len(new_target_order_no_val) == 6, 'Unexpected number of datasets'
+
+		test_name = new_target_order_no_val[args.test_index]
+
+		x_test, y_test = get_x_y_data(targets, test_name)
+		print('test_name', test_name)
+		print(x_test.shape, y_test.shape)
+
+		new_train_targets = [target for target in new_target_order_no_val if target != test_name]
+
+		assert len(new_train_targets) == 5, 'Unexpected number of datasets'
 
 		X_train = []
 		Y_train = []
@@ -387,7 +406,10 @@ else:
 			X_train.append(x)
 			Y_train.append(y)
 
-if not args.use_new_benchmarks:
+		assert val_name not in new_train_targets, 'ERROR: validation domain used for training'
+		assert test_name not in new_train_targets, 'ERROR: test domain used for training'
+
+if not use_new_benchmarks:
 	# check all data is expected sizes and shapes
 	for i, x in enumerate(X_train):
 		assert x.shape == (20,1), 'X_train['+str(i)+'].shape != (20, 1)'

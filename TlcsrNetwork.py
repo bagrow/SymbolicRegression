@@ -643,8 +643,13 @@ class TlcsrNetwork():
 
         # Get input ready.
         if self.options['quick_gens']:
-            dataset_indices = self.rng.choice(len(x), 20)
-            data_encoder_input_data = self.get_data_encoder_input_data(x[dataset_indices], y[dataset_indices], f_hat, self.num_data_encoder_inputs)
+            dataset_indices = self.rng.choice(len(x), 20, replace=False)
+            sorted_dataset_indices = sorted(dataset_indices)
+
+            get_row_set = lambda col1, col2: set([(*a, *b) for a,b in zip(col1,col2)])
+            assert get_row_set(x[dataset_indices],y[dataset_indices]) == get_row_set(x[sorted_dataset_indices], y[sorted_dataset_indices]), 'Not the same dataset (not just reordered)! If full dataset is not ordered, this makes sense'
+
+            data_encoder_input_data = self.get_data_encoder_input_data(x[sorted_dataset_indices], y[sorted_dataset_indices], f_hat, self.num_data_encoder_inputs)
         else:
             data_encoder_input_data = self.get_data_encoder_input_data(x, y, f_hat, self.num_data_encoder_inputs)
 
