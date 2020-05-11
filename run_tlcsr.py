@@ -7,6 +7,8 @@ from Tlcsr import Tlcsr
 # import GeneticProgramming as GP
 from GeneticProgramming.IndividualManyTargetData import IndividualManyTargetData
 from GeneticProgramming.GeneticProgrammingAfpoManyTargetData import GeneticProgrammingAfpoManyTargetData
+from GeneticProgramming.GeneticProgrammingAfpo import GeneticProgrammingAfpo
+
 import create_dataset_from_function as cdff
 
 import numpy as np
@@ -16,13 +18,34 @@ import pmlb
 import argparse
 import os
 import copy
+import itertools
 
 def get_x_y_data(targets, key):
 
 	if 'f' in targets[key]:
 
 		if targets[key]['spacing'] == 'random':
-			x = np.array([[np.random.uniform(targets[key]['a'], targets[key]['a']) for _ in range(targets[key]['num_inputs'])] for _ in range(targets[key]['num_points'])])
+			x = np.array([[np.random.uniform(targets[key]['a'], targets[key]['b']) for _ in range(targets[key]['num_inputs'])] for _ in range(targets[key]['num_points'])])
+
+		elif targets[key]['spacing'] == 'uniform':
+
+			a = targets[key]['a']
+			b = targets[key]['b']
+
+			step = targets[key]['step']
+
+			if len(step) == 1:
+				step = step*targets[key]['num_inputs']
+
+			elif len(step) != targets[key]['num_inputs']:
+				print('Either use 1 step or the same number of num_inputs. You specified step =', step, 'but num_inputs =', targets[key]['num_inputs'])
+				exit()
+
+			n = (b-a)/np.array(step)
+
+			xs = [np.linspace(a, b, int(round(ni, 0))) for ni in n]
+
+			x = np.array(list(itertools.product(*xs)))
 
 		else:
 			print('target spacing '+str(targets[key]['spacing'])+' not implemented')
@@ -41,8 +64,10 @@ def get_x_y_data(targets, key):
 		# keep the : after -1 to get column vec
 		y = data.iloc[:,-1:].values
 
-	elif 'pmlb' in targets[key]: 
-		x, y = pmlb.fetch_data(key, return_X_y=True)
+	elif 'pmlb' in targets[key]:
+		pmlb_path = os.path.join(os.environ['DATASET_PATH'], 'pmlb')
+		os.makedirs(pmlb_path, exist_ok=True)
+		x, y = pmlb.fetch_data(key, return_X_y=True, local_cache_dir=pmlb_path)
 		y = y[:,None]
 
 	else:
@@ -69,6 +94,13 @@ parser.add_argument('--max_rewrites', type=int, help='Set the max number of equa
 parser.add_argument('--constant_targets', action='store_true', help='Use constant regression datasets.')
 parser.add_argument('--lines', action='store_true', help='Use lines for target functions')
 parser.add_argument('--num_datasets', type=int, help='set the number of datasets')
+parser.add_argument('--patience', type=int, help='set the number of generations to weight without validation error decrease before stopping')
+parser.add_argument('--easy_for_gp', action='store_true', help='Using same domain for val and test (gp only)')
+parser.add_argument('--equation_summary', action='store_true', help='Save equation data')
+parser.add_argument('--quick_gens', action='store_true', help='Make TLC-SR gens run faster for testing.')
+parser.add_argument('--use_old_primitives', action='store_true', help='use * - + as primitive set')
+parser.add_argument('--activation_function', type=str, default='tanh', help='use this activation function')
+parser.add_argument('--short_run', action='store_true', help='Run for small effort')
 
 args = parser.parse_args()
 print(args)
@@ -76,6 +108,8 @@ print(args)
 assert args.test_index is not None, 'Must use --test_index'
 
 assert (args.simultaneous_targets and args.single_target) == False, 'Cannot use --simultaneous_targets and --single_target at the same time'
+assert (args.simultaneous_targets or args.single_target), 'Most use --simultaneous_targets or --single_target'
+
 
 assert (args.use_old_benchmarks and args.constant_targets) == False, 'Cannot use --use_old_benchmarks and --constant_targets as the same time'
 
@@ -86,27 +120,75 @@ assert (args.lines and args.use_old_benchmarks) == False, 'Cannot use --lines an
 # essentially not xor
 assert (args.lines) == (args.num_datasets is not None), 'Connot use --lines without --num_datasets'
 
+# new_target_order = ['Vladislavleva-4',
+# 					'energy efficiency cooling',
+# 					'energy efficiency heating',
+# 					'boston housing',
+# 					'648_fri_c1_250_50', 
+# 					'654_fri_c0_500_10', 
+# 					'657_fri_c2_250_10']
 
-new_target_order = ['Vladislavleva-4',
-					'energy efficiency cooling',
-					'energy efficiency heating',
-					'boston housing',
-					'648_fri_c1_250_50', 
-					'654_fri_c0_500_10', 
-					'657_fri_c2_250_10']
+new_target_order = ['687_sleuth_ex1605',
+					'210_cloud',
+					'Vladislavleva-4',
+					'609_fri_c0_1000_5',
+					'612_fri_c1_1000_5',
+					'656_fri_c1_100_5',
+					'599_fri_c2_1000_5']
 
-targets = {'Vladislavleva-4': {'f': lambda x: 10/(5 + (x[0]-3)**2 + (x[1]-3)**2 + (x[2]-3)**2 + (x[3]-3)**2 + (x[4]-3)**2),
+# new_target_order = ['663_rabe_266',
+# 					'Vladislavleva-7',
+# 					'519_vinnie',
+# 					'Vladislavleva-8',
+# 					'Vladislavleva-1',
+# 					'228_elusage',
+# 					'Vladislavleva-3']
+
+targets = {'Vladislavleva-1': {'f': lambda x: np.exp(-(x[0]-1)**2)/(1.2 + (x[1]-2.5)**2),
+							  'a': -0.2,
+							  'b': 4.2,
+							  'step': [0.01],
+							  'num_inputs': 2,
+							  'spacing': 'uniform'},
+		   'Vladislavleva-3': {'f': lambda x: np.exp(-x[0])*x[0]**3*np.cos(x[0])*np.sin(x[0])*(np.cos(x[0])*(np.sin(x[0]))**2 - 1)*(x[1]-5),
+							  'a': -0.5,
+							  'b': 10.5,
+							  'step': [0.05, 0.5],
+							  'num_inputs': 2,
+							  'spacing': 'uniform'},
+		   'Vladislavleva-4': {'f': lambda x: 10/(5 + (x[0]-3)**2 + (x[1]-3)**2 + (x[2]-3)**2 + (x[3]-3)**2 + (x[4]-3)**2),
 							  'a': -0.25,
 							  'b': 6.35,
 							  'num_points': 5000,
 							  'num_inputs': 5,
 							  'spacing': 'random'},
+	  	   'Vladislavleva-7': {'f': lambda x: (x[0]-3)*(x[1]-3) + 2*np.sin((x[0]-4)*(x[1]-4)),
+							  'a': -0.25,
+							  'b': 6.35,
+							  'num_points': 1000,
+							  'num_inputs': 2,
+							  'spacing': 'random'},
+  	       'Vladislavleva-8': {'f': lambda x: ((x[0]-3)**4 + (x[1]-3)**3 - (x[1]-3))/((x[1]-2)**4 + 10),
+							  'a': -0.25,
+							  'b': 6.35,
+							  'step': [0.2],
+							  'num_inputs': 2,
+							  'spacing': 'uniform'},
 		   'energy efficiency cooling': {'file': 'energy_efficiency_heating.csv'},
 		   'energy efficiency heating': {'file': 'energy_efficiency_heating.csv'},
 		   'boston housing': {'file': 'boston_housing.csv'},
 		   '648_fri_c1_250_50': {'pmlb': True},
 		   '654_fri_c0_500_10': {'pmlb': True},
-		   '657_fri_c2_250_10': {'pmlb': True}}
+		   '657_fri_c2_250_10': {'pmlb': True},
+		   '687_sleuth_ex1605': {'pmlb': True},
+		   '210_cloud': {'pmlb': True},
+		   '609_fri_c0_1000_5': {'pmlb': True},
+		   '612_fri_c1_1000_5': {'pmlb': True},
+		   '656_fri_c1_100_5': {'pmlb': True},
+		   '599_fri_c2_1000_5': {'pmlb': True},
+		   '663_rabe_266': {'pmlb': True},
+		   '519_vinnie': {'pmlb': True},
+		   '228_elusage': {'pmlb': True}}
 
 if args.use_kexpressions:
 	options = {'use_k-expressions': True,
@@ -114,6 +196,10 @@ if args.use_kexpressions:
 
 else:
 	options = None
+
+options['equation_summary'] = args.equation_summary
+options['quick_gens'] = args.quick_gens
+options['activation_function'] = args.activation_function
 
 timelimit = args.max_rewrites if args.max_rewrites is not None else 100
 
@@ -179,15 +265,58 @@ if not args.use_new_benchmarks:
 
 if args.single_target:
 
-	X_train = [np.array(sorted(np.random.uniform(-1, 1, size=20)))[:, None]]
-	Y_train = [cdff.get_y(x, f_test) for x in X_train]
+	if args.use_new_benchmarks:
+		assert 0 <= args.test_index < len(new_target_order), '--test_index must be between 0 and 6 (inclusive) when using --use_new_benchmarks'
 
-	x_val = np.array(sorted(np.random.uniform(-1, 1, size=20)))[:, None]
-	y_val = cdff.get_y(x_val, f_test)
+		dataset_name = new_target_order[args.test_index]
 
-	x_test = np.array(sorted(np.random.uniform(-1, 1, size=20)))[:, None]
+		x_all, y_all = get_x_y_data(targets, dataset_name)
 
-	y_test = cdff.get_y(x_test, f_test)
+		# split
+		train_size = int(0.7*len(x_all))
+		val_size = int((len(x_all)-train_size)/2)
+		test_size = len(x_all) - train_size - val_size
+		train_indices = np.random.choice(len(x_all), train_size, replace=False)
+		not_train_indices = np.array([e for e in range(len(x_all)) if e not in train_indices])
+		# print(np.random.choice(len(not_train_indices), val_size, replace=False))
+		# print(type(np.random.choice(len(not_train_indices), val_size, replace=False)))
+		val_indices = not_train_indices[np.random.choice(len(not_train_indices), val_size, replace=False)]
+		test_indices = [e for e in not_train_indices if e not in val_indices]
+		# print(train_indices)
+
+		x_train = x_all[train_indices, :]
+		y_train = y_all[train_indices, :]
+
+		x_val = x_all[val_indices, :]
+		y_val = y_all[val_indices, :]
+
+		x_test = x_all[test_indices, :]
+		y_test = y_all[test_indices, :]
+
+		assert x_train.shape[1] == x_val.shape[1] == x_test.shape[1]
+
+		X_train = [x_train]
+		Y_train = [y_train]
+
+		# print('train_size', train_size, len(train_indices), x_train.shape, y_train.shape)
+		# print('val_size', val_size, len(val_indices), x_val.shape, y_val.shape)
+		# print('test_size', test_size, len(test_indices), x_test.shape, y_test.shape)
+
+		# print(x_all.shape)
+		# print(y_all.shape)
+		# print(len(x_all))
+		# exit()
+
+	else:
+		X_train = [np.array(sorted(np.random.uniform(-1, 1, size=20)))[:, None]]
+		Y_train = [cdff.get_y(x, f_test) for x in X_train]
+
+		x_val = np.array(sorted(np.random.uniform(-1, 1, size=20)))[:, None]
+		y_val = cdff.get_y(x_val, f_test)
+
+		x_test = np.array(sorted(np.random.uniform(-1, 1, size=20)))[:, None]
+
+		y_test = cdff.get_y(x_test, f_test)
 
 else:
 	if args.inconsistent_x:
@@ -233,10 +362,20 @@ else:
 
 		new_target_order_no_test = [target for target in new_target_order if target != test_name]
 
-		val_name = np.random.choice(new_target_order_no_test)
+		# get arbitrary but consistent order for validation domain
+		rng = np.random.RandomState(0)
+
+		shuffled_function_order = copy.copy(new_target_order_no_test)
+		rng.shuffle(shuffled_function_order)
+
+		val_name = shuffled_function_order[args.rep % len(shuffled_function_order)]
+
+		# val_name = np.random.choice(new_target_order_no_test)
 
 		x_val, y_val = get_x_y_data(targets, val_name)
-
+		print(targets)
+		print(val_name)
+		print(x_val.shape, y_val.shape)
 		new_train_targets = [target for target in new_target_order_no_test if target != val_name]
 
 		X_train = []
@@ -265,14 +404,27 @@ if not args.use_new_benchmarks:
 rep = args.rep
 exp = args.exp
 
-max_effort = 5*10**10
+if args.short_run:
+	max_effort = 10
+else:
+	max_effort = 5*10**10
+
+options['patience'] = args.patience
+
+if args.patience is not None:
+	assert args.patience >= 0, '--patience must be non-negative'
+	max_effort = float('inf')
 
 rng = np.random.RandomState(args.rep+100*args.exp)
 
 num_inputs_per_dataset = [len(x_test[0])] + [len(x_val[0])] + [len(x[0]) for x in X_train]
 num_data_encoder_inputs = max(num_inputs_per_dataset)+1
 
-primitive_set = ['*', '+', '-', '%', 'sin', 'cos']
+if args.use_old_primitives:
+	primitive_set = ['*', '+', '-']
+else:
+	primitive_set = ['*', '+', '-', '%', 'sin', 'cos']
+
 terminal_set = ['x'+str(i) for i in range(num_data_encoder_inputs-1)]
 
 if args.use_constants:
@@ -283,6 +435,9 @@ if args.use_constants:
 
 if args.genetic_programming:
 
+	params = {'max_effort': max_effort}
+	params['patience'] = args.patience
+
 	if args.simultaneous_targets:
 
 		train_dataset = []
@@ -291,6 +446,18 @@ if args.genetic_programming:
 
 			# format datasets
 			train_dataset.append(cdff.combine_x_y(x_train, y_train))
+
+		if args.easy_for_gp:
+			test_size = int(len(x_test)/2)
+			val_size = len(x_test) - test_size
+			test_indices = np.random.choice(len(x_test), test_size, replace=False)
+			val_indices = np.array([e for e in range(len(x_test)) if e not in test_indices])
+
+			x_val = x_test[val_indices,:]
+			y_val = y_test[val_indices]
+
+			x_test = x_test[test_indices,:]
+			y_test = y_test[test_indices]
 
 		val_dataset = cdff.combine_x_y(x_val, y_val)
 		test_dataset = cdff.combine_x_y(x_test, y_test)
@@ -307,22 +474,20 @@ if args.genetic_programming:
 
 		num_vars = num_data_encoder_inputs-1
 
-		params = {'max_effort': max_effort}
-
 		gp = GeneticProgrammingAfpoManyTargetData(rng=rng,
 												  pop_size=100,
-											      max_gens=600000, # can't set to inf since range(max_gens) used
-											      primitive_set=primitive_set,
-											      terminal_set=terminal_set,
-											      data=dataset,
-											      test_data=test_data,
-											      prob_mutate=1,
-											      prob_xover=0,
-											      num_vars=num_vars,
-											      mutation_param=2,
-											      individual=IndividualManyTargetData,
-											      # parameters below
-											      **params)
+												  max_gens=600000, # can't set to inf since range(max_gens) used
+												  primitive_set=primitive_set,
+												  terminal_set=terminal_set,
+												  data=dataset,
+												  test_data=test_data,
+												  prob_mutate=1,
+												  prob_xover=0,
+												  num_vars=num_vars,
+												  mutation_param=2,
+												  individual=IndividualManyTargetData,
+												  # parameters below
+												  **params)
 
 		info = gp.run(rep=args.rep,
 					  output_path=output_path,
@@ -351,21 +516,19 @@ if args.genetic_programming:
 
 			num_vars = num_data_encoder_inputs-1
 
-			params = {'max_effort': max_effort}
-
-			gp = GeneticProgrammingAfpoManyTargetData(rng=rng,
-													  pop_size=100,
-													  max_gens=600000,
-													  primitive_set=primitive_set,
-													  terminal_set=terminal_set,
-													  data=dataset,
-													  test_data=test_data,
-													  prob_mutate=1,
-													  prob_xover=0,
-													  num_vars=num_vars,
-													  mutation_param=2,
-													  # parameters below
-													  **params)
+			gp = GeneticProgrammingAfpo(rng=rng,
+										pop_size=100,
+										max_gens=600000,
+										primitive_set=primitive_set,
+									 	terminal_set=terminal_set,
+										data=dataset,
+										test_data=test_data,
+										prob_mutate=1,
+										prob_xover=0,
+										num_vars=num_vars,
+										mutation_param=2,
+										# parameters below
+										**params)
 
 			if prev_pop is not None:
 				gp.pop = prev_pop

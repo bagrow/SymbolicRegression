@@ -2,34 +2,43 @@ from TlcsrNetwork import TlcsrNetwork as Network
 
 import numpy as np
 
+# new/updated unit test
 def test_get_data_encoder_input_data():
 
-    x = np.array([-1, 0, 1])[:,None]
-    y = np.array([2, 4, 3])
-    f_hat = lambda x: x[0]
+    X = [np.array([-1, 0, 1])[:,None],
+         np.array([[-1, -2], [0, 0], [1, 2]]),
+         np.array([[-1, -2, -3], [0, 0, 0], [1, 2, 3]]),
+         np.array([[-1, -2, -3], [0, 0, 0], [1, 2, 3]])]
 
-    de_input = Network.get_data_encoder_input_data(x, y, f_hat)
+    Y = [np.array([2, 4, 3])[:,None],
+         np.array([2, 4, 3])[:,None],
+         np.array([2, 4, 3])[:,None],
+         np.array([2, 4, 3])[:,None]]
 
-    ans = [[[-1, 3],
-            [0, 4],
-            [1, 2]]]
+    F_hat = [lambda x: x[0],
+             lambda x: x[0]+x[1],
+             lambda x: x[0]+x[1]+x[2],
+             lambda x: x[0]+x[1]+x[2]]
 
-    assert np.all(ans == de_input), 'Failed test_get_data_encoder_input_data'
+    num_encoder_inputs_list = [2, 3, 4, 6]
 
+    answers = [[[[-1, 3],
+                 [0, 4],
+                 [1, 2]]],
+               [[[-1, -2, 5],
+                [0, 0, 4],
+                [1, 2, 0]]],
+               [[[-1, -2, -3, 8],
+                [0, 0, 0, 4],
+                [1, 2, 3, -3]]],
+               [[[-1, -2, -3, 0, 0, 8],
+                [0, 0, 0, 0, 0, 4],
+                [1, 2, 3, 0, 0, -3]]]]
 
-def test_get_data_encoder_input_data_2():
+    for x, y, f_hat, num_encoder_inputs, ans in zip(X, Y, F_hat, num_encoder_inputs_list, answers):
+        de_input = Network.get_data_encoder_input_data(x, y, f_hat, num_encoder_inputs)
 
-    x = np.array([[-1, -2], [0, 0], [1,2]])
-    y = np.array([2, 4, 3])
-    f_hat = lambda x: x[0]+x[1]
-
-    de_input = Network.get_data_encoder_input_data(x, y, f_hat)
-
-    ans = [[[-1, -2, 5],
-            [0, 0, 4],
-            [1, 2, 0]]]
-
-    assert np.all(ans == de_input), 'Failed test_get_data_encoder_input_data_2'
+        yield check_output, ans, de_input
 
 
 def test_get_lisp_from_stripped_lisp():
@@ -118,7 +127,7 @@ class test_no_constants():
 
         x = np.linspace(-1, 1, 20)[:, None]
         target = lambda x: x[0]
-        y = target(x.T)
+        y = target(x.T)[:, None]
         f_hat_seq = ['-', 'x0', 'x0']
         f_hat = lambda x: 0*x[0]
 
@@ -149,7 +158,7 @@ class test_no_constants():
 
         x = np.linspace(-1, 1, 20)[:, None]
         target = lambda x: x[0]
-        y = target(x.T)
+        y = target(x.T)[:, None]
         f_hat_seq = ['-', 'x0', 'x0']
         f_hat = lambda x: 0*x[0]
 
@@ -369,7 +378,7 @@ class test_with_constants():
 
         x = np.linspace(-1, 1, 20)[:, None]
         target = lambda x: x[0]
-        y = target(x.T)
+        y = target(x.T)[:, None]
         f_hat_seq = ['-', 'x0', 'x0']
         f_hat = lambda x: 0*x[0]
 
@@ -400,7 +409,7 @@ class test_with_constants():
 
         x = np.linspace(-1, 1, 20)[:, None]
         target = lambda x: x[0]
-        y = target(x.T)
+        y = target(x.T)[:, None]
         f_hat_seq = ['-', 'x0', 'x0']
         f_hat = lambda x: 0*x[0]
 
@@ -428,11 +437,11 @@ def test_get_lisp_summary():
              '(- x0 x0)',
              '(- x0 (+ x0 x0))']
 
-    answers = [{'*': 0, '+': 0, '-': 0, 'x0': 1, '#f': 0, 'unique subtrees under -': 0},
-               {'*': 0, '+': 0, '-': 0, 'x0': 0, '#f': 1, 'unique subtrees under -': 0},
-               {'*': 1, '+': 0, '-': 0, 'x0': 2, '#f': 0, 'unique subtrees under -': 0},
-               {'*': 0, '+': 0, '-': 1, 'x0': 2, '#f': 0, 'unique subtrees under -': 0},
-               {'*': 0, '+': 1, '-': 1, 'x0': 3, '#f': 0, 'unique subtrees under -': 1}]
+    answers = [{'*': 0, '+': 0, '-': 0, 'x0': 1, '#f': 0, 'unique subtrees under -': 0, '- simplified': 0},
+               {'*': 0, '+': 0, '-': 0, 'x0': 0, '#f': 1, 'unique subtrees under -': 0, '- simplified': 0},
+               {'*': 1, '+': 0, '-': 0, 'x0': 2, '#f': 0, 'unique subtrees under -': 0, '- simplified': 0},
+               {'*': 0, '+': 0, '-': 1, 'x0': 2, '#f': 0, 'unique subtrees under -': 0, '- simplified': 1},
+               {'*': 0, '+': 1, '-': 1, 'x0': 3, '#f': 0, 'unique subtrees under -': 1, '- simplified': 0}]
 
     for lisp, ans in zip(lisps, answers):
         output = Network.get_lisp_summary(lisp=lisp,
@@ -441,4 +450,4 @@ def test_get_lisp_summary():
         yield check_output, output, ans, 'Failure on '+lisp
 
 def check_output(output, ans, msg='Failure'):
-    assert output == ans, msg
+    assert np.all(output == ans), msg

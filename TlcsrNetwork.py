@@ -143,6 +143,9 @@ class TlcsrNetwork():
         if 'data_encoder_only' not in self.options:
             self.options['data_encoder_only'] = False
 
+        if 'activation_function' not in self.options:
+            self.options['activation_function'] = 'tanh'
+
         # construct the neural network
         self.network = self.get_network(data_encoder_only=self.options['data_encoder_only'],
                                         eq_encoder_only=self.options['eq_encoder_only'])
@@ -184,7 +187,7 @@ class TlcsrNetwork():
 
         assert not (data_encoder_only and eq_encoder_only), 'Both data_encoder_only and eq_encoder_only cannot be used at the same time'
 
-        hidden_activation = 'tanh'
+        hidden_activation = self.options['activation_function']
 
         # This excludes constant value node if used.
         self.num_decoder_tokens = len(self.target_characters)
@@ -532,6 +535,8 @@ class TlcsrNetwork():
         if self.options['save_lisp_summary']:
             self.summary_data = []
 
+        errors = []
+
         # TODO: save each equation and each error
         # Important to start at t=1, so that the
         # condition for adding group score works.
@@ -637,7 +642,12 @@ class TlcsrNetwork():
         """
 
         # Get input ready.
-        data_encoder_input_data = self.get_data_encoder_input_data(x, y, f_hat, self.num_data_encoder_inputs)
+        if self.options['quick_gens']:
+            dataset_indices = self.rng.choice(len(x), 20)
+            data_encoder_input_data = self.get_data_encoder_input_data(x[dataset_indices], y[dataset_indices], f_hat, self.num_data_encoder_inputs)
+        else:
+            data_encoder_input_data = self.get_data_encoder_input_data(x, y, f_hat, self.num_data_encoder_inputs)
+
         eq_encoder_input_data = self.get_eq_encoder_input_data(f_hat_seq)
         decoder_input_data = self.get_decoder_input_data()
 

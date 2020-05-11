@@ -153,6 +153,7 @@ class Tlcsr():
 
 		# Initialize weights
 		num_weights = self.model.get_num_weights()
+
 		weights = np.random.uniform(-1, 1, size=num_weights)
 
 		es = cma.CMAEvolutionStrategy(weights, sigma, cmaes_options)
@@ -193,14 +194,34 @@ class Tlcsr():
 
 		effort_checkpoint = 0
 
+		best_ind_save_loc = os.path.join(save_loc, 'best_ind_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv')
+
+		pop_data_summary_save_loc = os.path.join(save_loc, 'pop_data_summary_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv')
+
+		lisp_summary_data_save_loc = os.path.join(save_loc, 'lisp_summary_data_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv')
+	
+		equation_summary_data_save_loc = os.path.join(save_loc, 'equation_summary_data_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv')
+
+		pd.DataFrame(best_individual_data).to_csv(best_ind_save_loc, header=None, index=False)
+
+
 		if self.options['save_lisp_summary']:
 			summary_data_order = self.model.primitive_set + self.model.terminal_set + ['unique subtrees under -', '- simplified']
-			summary_data_table = [['generation', 'NN index', 'dataset type', 'num rewrites'] + summary_data_order]
+			lisp_summary_data_table = [['generation', 'NN index', 'dataset type', 'num rewrites'] + summary_data_order]
+
+			pd.DataFrame(lisp_summary_data_table).to_csv(lisp_summary_data_save_loc)
+
+		if self.options['equation_summary']:
+			equation_summary_table = [['generation', 'nn index', 'dataset', 'rewrite index', 'equation', 'RMSE']]
+
+			pd.DataFrame(equation_summary_table).to_csv(equation_summary_data_save_loc, header=None, index=False)
+
+		if self.options['save_pop_summary']:
+			pop_data_summary = [['Generation', 'individual index', *['train'+str(i) for i in range(len(self.X_train))], 'validation']]
+
+			pd.DataFrame(pop_data_summary).to_csv(pop_summary_data_save_loc, header=None, index=False)
 
 		while max_effort >= self.model.effort:
-
-			if self.options['save_pop_summary']:
-				pop_data_summary = [['Generation', 'individual index', *['train'+str(i) for i in range(len(self.X_train))], 'validation']]
 
 			while not es.stop():
 
@@ -234,12 +255,13 @@ class Tlcsr():
 					self.X_train = [x for x, y in self.all_train_datasets[indices]]
 					self.Y_train = [y for x, y in self.all_train_datasets[indices]]
 
+				best_individual_data = []
+				lisp_summary_data_table = []
+				equation_summary_table = []
+				pop_data_summary = []
 
 				# evaluate solutions (weights)
 				for nn_index, w in enumerate(solutions):
-
-					if self.options['save_pop_summary']:
-						row_pop_data_summary = [gen, nn_index]
 
 					self.model.set_weights(weights=w)
 
@@ -252,7 +274,9 @@ class Tlcsr():
 						for i, (x, y) in enumerate(zip(self.X_train, self.Y_train)):
 
 							output = self.model.evaluate(x, y,
-												 		 initial_f_hat, initial_f_hat_seq)
+														 initial_f_hat, initial_f_hat_seq,
+														 return_equation_str=True,
+														 return_errors=True)
 
 							individual_error_row.append(output['error_best'])
 
@@ -262,7 +286,12 @@ class Tlcsr():
 							if self.options['save_lisp_summary']:
 								for j, counts in enumerate(self.model.summary_data):
 									row = [gen, nn_index, 'train'+str(i), j] + [counts[key] for key in summary_data_order]
-									summary_data_table.append(row)
+									lisp_summary_data_table.append(row)
+
+							if self.options['equation_summary']:
+								for j, (eq, err) in enumerate(zip(output['equation_str'], output['errors'])):
+									row = [gen, nn_index, 'train'+str(i), j, eq, err]
+									equation_summary_table.append(row)
 
 						individual_errors.append(individual_error_row)
 
@@ -284,7 +313,8 @@ class Tlcsr():
 													 initial_f_hat, initial_f_hat_seq,
 													 return_equation=True,
 													 return_decoded_list=True,
-													 return_errors=True)
+													 return_errors=True,
+													 return_equation_str=True)
 
 					val_errors.append(val_output['error_best'])
 					num_unique_errors.append(len(np.unique(val_output['errors'])))
@@ -297,7 +327,12 @@ class Tlcsr():
 					if self.options['save_lisp_summary']:
 						for j, counts in enumerate(self.model.summary_data):
 							row = [gen, nn_index, 'validation', j] + [counts[key] for key in summary_data_order]
-							summary_data_table.append(row)
+							lisp_summary_data_table.append(row)
+
+					if self.options['equation_summary']:
+						for j, (eq, err) in enumerate(zip(val_output['equation_str'], val_output['errors'])):
+							row = [gen, nn_index, 'validation', j, eq, err]
+							equation_summary_table.append(row)
 
 				# Let CMA-ES update the weights based on
 				# the fitnesses computed during evaluation.
@@ -332,16 +367,22 @@ class Tlcsr():
 				self.model.set_weights(weights=self.best['weights'])
 
 				test_output = self.model.evaluate(self.x_test, self.y_test,
-											 	  initial_f_hat, initial_f_hat_seq,
-											 	  return_equation=True,
-											 	  return_decoded_list=True,
-											 	  return_errors=True)
+												  initial_f_hat, initial_f_hat_seq,
+												  return_equation=True,
+												  return_decoded_list=True,
+												  return_errors=True,
+												  return_equation_str=True)
 
 
 				if self.options['save_lisp_summary']:
 					for j, counts in enumerate(self.model.summary_data):
 						row = [gen, 'best', 'test', j] + [counts[key] for key in summary_data_order]
-						summary_data_table.append(row)
+						lisp_summary_data_table.append(row)
+
+				if self.options['equation_summary']:
+					for j, (eq, err) in enumerate(zip(test_output['equation_str'],test_output['errors'])):
+						row = [gen, 'best', 'test', j, eq, err]
+						equation_summary_table.append(row)
 
 				# Don't count effort to evaluated test
 				# because test is only used for analysis.
@@ -365,6 +406,36 @@ class Tlcsr():
 				best_individual_data.append(row)
 
 				print('total effort', self.model.effort)
+
+				# Save data about the fitting
+				df = pd.DataFrame(best_individual_data)
+				df.to_csv(best_ind_save_loc, index=False, mode='a', header=None)
+
+				if self.options['save_pop_summary']:
+					df = pd.DataFrame(pop_data_summary)
+					df.to_csv(pop_data_summary_save_loc, index=False, mode='a', header=None)
+
+				if self.options['save_lisp_summary']:
+					df = pd.DataFrame(lisp_summary_data_table)
+					df.to_csv(lisp_summary_data_save_loc, index=False, mode='a', header=None)
+
+				if self.options['equation_summary']:
+					df = pd.DataFrame(equation_summary_table)
+					df.to_csv(equation_summary_data_save_loc, index=False, mode='a', header=None)
+
+				if self.options['patience'] is not None:
+
+					# Stop if validation error has stopped improving
+					if not hasattr(self, 'prev_best_val'):
+						self.prev_best_val = self.best['val error']
+						self.gen_of_prev_best_val = i
+					else:
+						if self.prev_best_val > self.best['val error']:
+							self.prev_best_val = self.best['val error']
+							self.gen_of_prev_best_val = gen
+						else:
+							if (gen-self.gen_of_prev_best_val) >= self.options['patience']:
+								break
 
 				# check if max number of operations have occured
 				if max_effort < self.model.effort:
@@ -396,19 +467,7 @@ class Tlcsr():
 				cmaes_options['seed'] += 10**7	 # increase by large number, so won't accidentally reuse
 				es = cma.CMAEvolutionStrategy(weights, sigma, cmaes_options)
 
-		# Save data about the fitting
-		df = pd.DataFrame(best_individual_data[1:], columns=best_individual_data[0])
-		df.to_csv(os.path.join(save_loc, 'best_ind_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
-
-		if self.options['save_pop_summary']:
-			df = pd.DataFrame(pop_data_summary[1:], columns=pop_data_summary[0])
-			df.to_csv(os.path.join(save_loc, 'pop_data_summary_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
-
 		self.best['network'].save_weights(os.path.join(save_loc, 'best_ind_model_weights_rep'+str(self.rep)+'_'+self.test_dataset_name+'.h5'))
-
-		if self.options['save_lisp_summary']:
-			df = pd.DataFrame(summary_data_table[1:], columns=summary_data_table[0])
-			df.to_csv(os.path.join(save_loc, 'lisp_summary_data_rep'+str(self.rep)+'_'+self.test_dataset_name+'.csv'), index=False)
 
 
 if __name__ == '__main__':
@@ -420,7 +479,7 @@ if __name__ == '__main__':
 						 primitive_set=['*', '+', '-'],
 						 terminal_set=['x0'],
 						 options={'use_k-expressions': True,
-						 		  'head_length': 5})
+								  'head_length': 5})
 
 	x = np.linspace(-1, 1, 20)[None, :]
 	f = lambda x: x[0]**4 + x[0]**3
