@@ -130,42 +130,10 @@ assert (args.lines and args.use_old_benchmarks) == False, 'Cannot use --lines an
 # essentially not xor
 assert (args.lines) == (args.num_datasets is not None), 'Connot use --lines without --num_datasets'
 
-# new_target_order = ['Vladislavleva-4',
-# 					'energy efficiency cooling',
-# 					'energy efficiency heating',
-# 					'boston housing',
-# 					'648_fri_c1_250_50', 
-# 					'654_fri_c0_500_10', 
-# 					'657_fri_c2_250_10']
-
-if args.use_dim5_benchmarks:
-	new_target_order = ['687_sleuth_ex1605',
-						'210_cloud',
-						'Vladislavleva-4',
-						'609_fri_c0_1000_5',
-						'612_fri_c1_1000_5',
-						'656_fri_c1_100_5',
-						'599_fri_c2_1000_5']
-
-elif args.use_dim2_benchmarks:
-	new_target_order = ['663_rabe_266',
-						'Vladislavleva-7',
-						'519_vinnie',
-						'Vladislavleva-8',
-						'Vladislavleva-1',
-						'228_elusage',
-						'Vladislavleva-3']
-
-# get a single flag to use later
-if args.use_dim2_benchmarks or args.use_dim5_benchmarks:
-	use_new_benchmarks = True
-else:
-	use_new_benchmarks = False
-
 targets = {'Vladislavleva-1': {'f': lambda x: np.exp(-(x[0]-1)**2)/(1.2 + (x[1]-2.5)**2),
 							  'a': -0.2,
 							  'b': 4.2,
-							  'step': [0.01],
+							  'step': [0.1],
 							  'num_inputs': 2,
 							  'spacing': 'uniform'},
 		   'Vladislavleva-3': {'f': lambda x: np.exp(-x[0])*x[0]**3*np.cos(x[0])*np.sin(x[0])*(np.cos(x[0])*(np.sin(x[0]))**2 - 1)*(x[1]-5),
@@ -207,6 +175,38 @@ targets = {'Vladislavleva-1': {'f': lambda x: np.exp(-(x[0]-1)**2)/(1.2 + (x[1]-
 		   '663_rabe_266': {'pmlb': True},
 		   '519_vinnie': {'pmlb': True},
 		   '228_elusage': {'pmlb': True}}
+
+# new_target_order = ['Vladislavleva-4',
+# 					'energy efficiency cooling',
+# 					'energy efficiency heating',
+# 					'boston housing',
+# 					'648_fri_c1_250_50', 
+# 					'654_fri_c0_500_10', 
+# 					'657_fri_c2_250_10']
+
+if args.use_dim5_benchmarks:
+	new_target_order = ['687_sleuth_ex1605',
+						'210_cloud',
+						'Vladislavleva-4',
+						'609_fri_c0_1000_5',
+						'612_fri_c1_1000_5',
+						'656_fri_c1_100_5',
+						'599_fri_c2_1000_5']
+
+elif args.use_dim2_benchmarks:
+	new_target_order = ['663_rabe_266',
+						'Vladislavleva-7',
+						'519_vinnie',
+						'Vladislavleva-8',
+						'Vladislavleva-1',
+						'228_elusage',
+						'Vladislavleva-3']
+
+# get a single flag to use later
+if args.use_dim2_benchmarks or args.use_dim5_benchmarks:
+	use_new_benchmarks = True
+else:
+	use_new_benchmarks = False
 
 if args.use_kexpressions:
 	options = {'use_k-expressions': True,

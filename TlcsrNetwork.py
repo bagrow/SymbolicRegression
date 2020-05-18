@@ -641,6 +641,8 @@ class TlcsrNetwork():
             The keys depend on the return_... parameters.
         """
 
+        self.f_hat = f_hat
+
         # Get input ready.
         if self.options['quick_gens']:
             dataset_indices = self.rng.choice(len(x), 20, replace=False)
@@ -788,16 +790,13 @@ class TlcsrNetwork():
         output['error'] = error
 
         if return_equation:
-            # This check is if an invalid equation was generated.
-            output['equation'] = self.f_hat if error < 10**9 else None
+            output['equation'] = self.f_hat
 
         if return_equation_str:
-            # This check is if an invalid equation was generated.
-            output['equation_str'] = lisp if error < 10**9 else None
+            output['equation_str'] = lisp if error != float('inf') else None
 
         if return_decoded_list:
-            # This check is if an invalid equation was generated.
-            output['decoded_list'] = decoded_list if error < 10**9 else None
+            output['decoded_list'] = decoded_list
 
         output['raw_decoded_list'] = decoded_list
 
