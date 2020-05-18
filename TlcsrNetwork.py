@@ -1,7 +1,9 @@
 import GeneticProgramming as GP
 from GeneticProgramming.consts import *
+from GeneticProgramming.errors import RSE, RMSE
 from kexpressions import build_tree
 from GeneticProgramming.protected_functions import *
+from GeneticProgramming.common_functions import get_function
 import create_dataset_from_function as cdff
 
 from keras.models import Model
@@ -768,10 +770,15 @@ class TlcsrNetwork():
                     else:
                         x_adjusted = x.copy()
 
+                    # t.evaluate_fitness(dataset, compute_val_error=False)
+                    f_string = t.convert_lisp_to_standard_for_function_creation()
+
+                    self.f_hat = get_function(f_string)
+                    error = RMSE(x=x_adjusted, y=y, f=self.f_hat)
+
+                    # this will count only one tree because t is from Individual
+                    # not IndividualManyTargetData
                     dataset = [cdff.combine_x_y(x_adjusted,y), []]
-                    t.evaluate_fitness(dataset, compute_val_error=False)
-                    error = t.fitness[0]
-                    self.f_hat = t.f
                     self.effort += t.get_effort_tree_eval(dataset)
 
                 else:

@@ -8,7 +8,7 @@ import os
 class Tlcsr():
 
 	def __init__(self, exp, rep, model, X_train, Y_train,
-				 x_val, y_val, x_test, y_test,
+				 X_val, Y_val, x_test, y_test,
 				 test_dataset_name, simultaneous_targets,
 				 timelimit, options=None):
 		"""Initialize class with a model to train
@@ -27,11 +27,11 @@ class Tlcsr():
 			The output data to {f_1, ..., f_m}.
 			In each element of the list,
 			is a column array.
-		x_val : np.array
+		X_val : np.array
 			The input validation data to some
 			function (not {f_1, ..., f_m}).
 			Each column is one variable.
-		y_val : np.array
+		Y_val : np.array
 			The output validation data to some
 			function (not {f_1, ..., f_m}).
 			Shape is column array.
@@ -100,8 +100,8 @@ class Tlcsr():
 		self.x_train = X_train[self.target_index]
 		self.target_index += 1
 
-		self.x_val = x_val
-		self.y_val = y_val
+		self.X_val = X_val
+		self.Y_val = Y_val
 
 		self.x_test = x_test
 		self.y_test = y_test
@@ -221,7 +221,9 @@ class Tlcsr():
 
 			pd.DataFrame(pop_data_summary).to_csv(pop_summary_data_save_loc, header=None, index=False)
 
-		while max_effort >= self.model.effort:
+		stop = False
+
+		while max_effort >= self.model.effort and not stop:
 
 			while not es.stop():
 
@@ -309,30 +311,73 @@ class Tlcsr():
 					else:
 						fitnesses.append(output['error_best'])
 
-					val_output = self.model.evaluate(self.x_val, self.y_val,
-													 initial_f_hat, initial_f_hat_seq,
-													 return_equation=True,
-													 return_decoded_list=True,
-													 return_errors=True,
-													 return_equation_str=True)
+					if self.simultaneous_targets:
 
-					val_errors.append(val_output['error_best'])
-					num_unique_errors.append(len(np.unique(val_output['errors'])))
-					num_errors.append(len(val_output['errors']))
+						# List of error for each target
+						# for a particular weight configuration.
+						individual_val_error_row = []
 
-					if self.options['save_pop_summary']:
-						row_pop_data_summary.append(val_output['error_best'])
-						pop_data_summary.append(row_pop_data_summary)
+						for i, (x, y) in enumerate(zip(self.X_val, self.Y_val)):
 
-					if self.options['save_lisp_summary']:
-						for j, counts in enumerate(self.model.summary_data):
-							row = [gen, nn_index, 'validation', j] + [counts[key] for key in summary_data_order]
-							lisp_summary_data_table.append(row)
+							val_output = self.model.evaluate(x, y,
+														 initial_f_hat, initial_f_hat_seq,
+														 return_equation_str=True,
+														 return_errors=True)
 
-					if self.options['equation_summary']:
-						for j, (eq, err) in enumerate(zip(val_output['equation_str'], val_output['errors'])):
-							row = [gen, nn_index, 'validation', j, eq, err]
-							equation_summary_table.append(row)
+							individual_val_error_row.append(val_output['error_best'])
+
+							if self.options['save_pop_summary']:
+								row_pop_data_summary.append(val_output['error_best'])
+
+							if self.options['save_lisp_summary']:
+								for j, counts in enumerate(self.model.summary_data):
+									row = [gen, nn_index, 'validation', j] + [counts[key] for key in summary_data_order]
+									lisp_summary_data_table.append(row)
+
+							if self.options['equation_summary']:
+								for j, (eq, err) in enumerate(zip(val_output['equation_str'], val_output['errors'])):
+									row = [gen, nn_index, 'train'+str(i), j, eq, err]
+									equation_summary_table.append(row)
+
+							if self.options['equation_summary']:
+								for j, (eq, err) in enumerate(zip(val_output['equation_str'], val_output['errors'])):
+									row = [gen, nn_index, 'validation', j, eq, err]
+									equation_summary_table.append(row)
+						
+						if self.options['save_pop_summary']:
+							pop_data_summary.append(row_pop_data_summary)
+
+						assert len(individual_val_error_row) == 5
+
+						val_errors.append(np.mean(individual_val_error_row))
+						num_unique_errors.append(len(np.unique(val_output['errors'])))
+						num_errors.append(len(val_output['errors']))
+
+					else:
+						val_output = self.model.evaluate(self.x_val, self.y_val,
+														 initial_f_hat, initial_f_hat_seq,
+														 return_equation=True,
+														 return_decoded_list=True,
+														 return_errors=True,
+														 return_equation_str=True)
+
+						val_errors.append(val_output['error_best'])
+						num_unique_errors.append(len(np.unique(val_output['errors'])))
+						num_errors.append(len(val_output['errors']))
+
+						if self.options['save_pop_summary']:
+							row_pop_data_summary.append(val_output['error_best'])
+							pop_data_summary.append(row_pop_data_summary)
+
+						if self.options['save_lisp_summary']:
+							for j, counts in enumerate(self.model.summary_data):
+								row = [gen, nn_index, 'validation', j] + [counts[key] for key in summary_data_order]
+								lisp_summary_data_table.append(row)
+
+						if self.options['equation_summary']:
+							for j, (eq, err) in enumerate(zip(val_output['equation_str'], val_output['errors'])):
+								row = [gen, nn_index, 'validation', j, eq, err]
+								equation_summary_table.append(row)
 
 				# Let CMA-ES update the weights based on
 				# the fitnesses computed during evaluation.
@@ -435,6 +480,7 @@ class Tlcsr():
 							self.gen_of_prev_best_val = gen
 						else:
 							if (gen-self.gen_of_prev_best_val) >= self.options['patience']:
+								stop = True
 								break
 
 				# check if max number of operations have occured
@@ -470,39 +516,39 @@ class Tlcsr():
 		self.best['network'].save_weights(os.path.join(save_loc, 'best_ind_model_weights_rep'+str(self.rep)+'_'+self.test_dataset_name+'.h5'))
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-	from TlcsrNetwork import TlcsrNetwork
+# 	from TlcsrNetwork import TlcsrNetwork
 
-	model = TlcsrNetwork(rng=np.random.RandomState(0),
-						 num_data_encoder_inputs=2,
-						 primitive_set=['*', '+', '-'],
-						 terminal_set=['x0'],
-						 options={'use_k-expressions': True,
-								  'head_length': 5})
+# 	model = TlcsrNetwork(rng=np.random.RandomState(0),
+# 						 num_data_encoder_inputs=2,
+# 						 primitive_set=['*', '+', '-'],
+# 						 terminal_set=['x0'],
+# 						 options={'use_k-expressions': True,
+# 								  'head_length': 5})
 
-	x = np.linspace(-1, 1, 20)[None, :]
-	f = lambda x: x[0]**4 + x[0]**3
-	y = f(x)
+# 	x = np.linspace(-1, 1, 20)[None, :]
+# 	f = lambda x: x[0]**4 + x[0]**3
+# 	y = f(x)
 
-	f_val = lambda x: x[0]**5
-	y_val = f_val(x)
+# 	f_val = lambda x: x[0]**5
+# 	y_val = f_val(x)
 	
-	f_test = lambda x: x[0]
-	y_test = f_test(x)
+# 	f_test = lambda x: x[0]
+# 	y_test = f_test(x)
 
-	rep = 1
-	exp = 100
+# 	rep = 1
+# 	exp = 100
 
-	fitter = Tlcsr(rep=rep, exp=exp, model=model,
-				   X_train=[x], Y_train=[y],
-				   x_val=x, y_val=y_val,
-				   x_test=x, y_test=y_test,
-				   simultaneous_targets=True,
-				   timelimit=100,
-				   test_dataset_name='test')
+# 	fitter = Tlcsr(rep=rep, exp=exp, model=model,
+# 				   X_train=[x], Y_train=[y],
+# 				   x_val=x, y_val=y_val,
+# 				   x_test=x, y_test=y_test,
+# 				   simultaneous_targets=True,
+# 				   timelimit=100,
+# 				   test_dataset_name='test')
 
-	cmaes_options = {'popsize': 100,
-					 'tolfun': 0}  # toleration in function value
+# 	cmaes_options = {'popsize': 100,
+# 					 'tolfun': 0}  # toleration in function value
 
-	fitter.fit(max_effort=10**9, sigma=0.5, cmaes_options=cmaes_options)
+# 	fitter.fit(max_effort=10**9, sigma=0.5, cmaes_options=cmaes_options)

@@ -1,4 +1,4 @@
-f"""Train seq2seq model (input=dataset and previous equation, output=equation) to do
+"""Train seq2seq model (input=dataset and previous equation, output=equation) to do
 symbolic regression.
 """
 
@@ -344,13 +344,13 @@ else:
 		gen_x_values = lambda: np.linspace(-1, 1, 20)
 
 	if not use_new_benchmarks:
-		functions = [eval('lambda x: '+f_str) for f_str in train_function_strs]
+		train_functions = [eval('lambda x: '+f_str) for f_str in train_function_strs]
 
 		if not (args.constant_targets or args.lines):
-			assert len(functions) == len(function_strs) - 1, 'len(functions) != len(function_strs) - 1'
+			assert len(train_functions) == len(function_strs) - 1, 'len(functions) != len(function_strs) - 1'
 
-		X_train = [gen_x_values()[:, None] for _ in range(len(functions))]
-		Y_train = [cdff.get_y(x, f) for x, f in zip(X_train, functions)]
+		X_train = [gen_x_values()[:, None] for _ in range(len(train_functions))]
+		Y_train = [cdff.get_y(x, f) for x, f in zip(X_train, train_functions)]
 
 		x_val = gen_x_values()[:, None]
 
@@ -400,6 +400,8 @@ else:
 		X_train = []
 		Y_train = []
 
+		train_functions = []
+		
 		for target_name in new_train_targets:
 			x, y = get_x_y_data(targets, target_name)
 
@@ -422,6 +424,32 @@ if not use_new_benchmarks:
 
 	assert y_val.shape == (20,1), 'y_val.shape != (20, 1)'
 	assert y_val.shape == (20,1), 'y_val.shape != (20, 1)'
+
+
+# ignore previous validation dataset (later I will remove the previous setup to
+# avoid confusion) and create validation datasets for each training dataset.
+if not args.use_old_benchmarks:
+	print('Validation dataset setup is not implemented for new benchmarks')
+	exit()
+
+# make x-values
+rng_val = np.random.RandomState(0)
+
+X_val = []
+Y_val = []
+
+for i, _ in enumerate(X_train):
+	x_val = []
+	while len(x_val) < 20:
+		while True:
+			x_val_value = rng_val.uniform(-1, 1)
+			if x_val_value not in X_train[0]:
+				break
+		x_val.append(x_val_value)
+	x_val.sort()
+	x_val = np.array(x_val)[:,None]
+	X_val.append(x_val)
+	Y_val.append(cdff.get_y(x_val, train_functions[i]))
 
 rep = args.rep
 exp = args.exp
@@ -481,7 +509,11 @@ if args.genetic_programming:
 			x_test = x_test[test_indices,:]
 			y_test = y_test[test_indices]
 
-		val_dataset = cdff.combine_x_y(x_val, y_val)
+		val_dataset = []
+
+		for i, (x_val, y_val) in enumerate(zip(X_val, Y_val)):
+			val_dataset.append(cdff.combine_x_y(x_val, y_val))
+		
 		test_dataset = cdff.combine_x_y(x_test, y_test)
 
 		output_path = os.path.join(os.environ['TLCSR_DATA'], 'experiment'+str(args.exp), 'gp')
@@ -576,7 +608,7 @@ else:   # for TLC-SR
 	fitter = Tlcsr(rep=rep, exp=exp,
 				   model=model,
 				   X_train=X_train, Y_train=Y_train,
-				   x_val=x_val, y_val=y_val,
+				   X_val=X_val, Y_val=Y_val,
 				   x_test=x_test, y_test=y_test,
 				   test_dataset_name='test_index'+str(args.test_index),
 				   timelimit=timelimit,

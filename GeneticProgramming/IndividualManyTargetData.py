@@ -2,11 +2,37 @@ from .common_functions import union, get_function
 from .Individual import Individual
 from .consts import *
 from .protected_functions import *
+from .errors import RSE, RMSE
 
 import numpy as np
 
 
 class IndividualManyTargetData(Individual):
+
+
+    def get_error(self, dataset_list, error):
+
+        errors = []
+
+        for dataset in dataset_list:
+
+            x_data = dataset[:, 1:].T
+
+            # if x is the wrong size, adjust
+            num_x_input = len(x_data)
+
+            if num_x_input < self.num_vars:
+                x_adjusted = np.zeros((self.num_vars, len(x_data[0])))
+                x_adjusted[:num_x_input, :] = x_data.copy()
+
+            else:
+                x_adjusted = x_data.copy()
+
+            y_data = dataset[:, 0]
+
+            errors.append(error(x=x_adjusted.T, y=y_data[:,None], f=self.f))
+
+        return np.mean(errors)
 
 
     def evaluate_fitness(self, data, attempts=40, compute_val_error=True):
@@ -36,51 +62,18 @@ class IndividualManyTargetData(Individual):
             this is stored in data[1].
         """
 
-        self.fitness[0] = 0
-
-        if compute_val_error:
-            x_data_val = data[1][:, 1:].T
-
-                        # if x is the wrong size, adjust
-            num_x_input = len(x_data_val)
-
-            if num_x_input < self.num_vars:
-                x_adjusted_val = np.zeros((self.num_vars, len(x_data_val[0])))
-                x_adjusted_val[:num_x_input, :] = x_data_val.copy()
-
-            else:
-                x_adjusted_val = x_data_val.copy()
-
-            y_data_val = data[1][:, 0]
-
         f_string = self.convert_lisp_to_standard_for_function_creation()
 
         self.f = get_function(f_string)
 
-        error = lambda x, y, f=self.f: np.sqrt(np.mean(np.power(f(x) - y, 2)))
+        error = RSME
 
-        for train_dataset in data[0]:
-
-            x_data = train_dataset[:, 1:].T
-
-            # if x is the wrong size, adjust
-            num_x_input = len(x_data)
-
-            if num_x_input < self.num_vars:
-                x_adjusted = np.zeros((self.num_vars, len(x_data[0])))
-                x_adjusted[:num_x_input, :] = x_data.copy()
-
-            else:
-                x_adjusted = x_data.copy()
-
-            y_data = train_dataset[:, 0]
-
-            self.fitness[0] += error(x_adjusted, y_data)
-
-        self.fitness[0] = self.fitness[0] / len(data[0])
+        self.fitness[0] = self.get_error(dataset_list=data[0], error=error)
 
         if compute_val_error:
-            self.validation_fitness = error(x_adjusted_val, y_data_val)
+
+            self.validation_fitness = self.get_error(dataset_list=data[1], error=error)
+
 
     def evaluate_test_points(self, data):
         """Calculate error for testing data. This method assumes that self.f
@@ -121,7 +114,7 @@ class IndividualManyTargetData(Individual):
         return self.testing_fitness
 
 
-    def get_number_of_operations_in_tree_eval(self, datasets):
+    def get_effort_tree_eval(self, datasets):
         """Modified from parent class to account for eval on multiple datasets
         and averaging over them. Each non-leaf node is an operation, so
         the number of operations in a single evaluation
@@ -143,14 +136,15 @@ class IndividualManyTargetData(Individual):
         num_leaves, num_nodes = self.get_num_leaves(num_nodes=True)
         num_nonleaves = num_nodes - num_leaves
 
-        num_ops_per_eval = num_nonleaves
+        effort_per_eval = num_nonleaves
 
         num_training_data_points = sum([len(d) for d in datasets[0]])
+        num_validation_data_points = sum([len(d) for d in datasets[1]])
 
-        num_data_points = num_training_data_points + len(datasets[1])
+        num_data_points = num_training_data_points + num_validation_data_points
 
-        num_ops_per_RMSE = 3*num_data_points + 1
+        effort_from_RMSE = 3*num_data_points + 1
 
-        num_ops_per_average = len(datasets[0])
+        effort_from_average = len(datasets[0])
 
-        return num_ops_per_RMSE + num_data_points*num_ops_per_eval
+        return effort_from_RMSE + effort_from_average + num_data_points*effort_per_eval
